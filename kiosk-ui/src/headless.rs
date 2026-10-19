@@ -70,7 +70,7 @@ pub fn screenshot(mut app: KioskApp, out: &Path, size: [u32; 2], pages: &[usize]
     let mut off = Offscreen::new(size)?;
     let [w, h] = size;
     let ppp = pixels_per_point(h);
-    let names = ["home", "network", "controls"];
+    let names = ["home", "network", "controls", "settings"];
     let mut t = 12.0;
     for &page in pages {
         app.page = page;
@@ -128,16 +128,19 @@ mod tests {
             t += 0.03;
         }
 
-        // tab bar: third item ("Controls")
-        let tab = pos2(640.0 - 200.0 + 6.0 + (400.0 - 12.0) / 3.0 * 2.5, 720.0 - 24.0 - 35.0);
-        click(&mut off, &mut app, &mut t, tab, tab);
-        assert_eq!(app.page, 2, "tab bar should switch to Controls");
+        // tab bar: 480 wide, four items; the fourth is "Settings"
+        let tab = |i: f32| pos2(640.0 - 240.0 + 6.0 + (480.0 - 12.0) / 4.0 * (i + 0.5), 720.0 - 24.0 - 35.0);
+        click(&mut off, &mut app, &mut t, tab(3.0), tab(3.0));
+        assert_eq!(app.page, 3, "tab bar should switch to Settings");
 
-        // "Show frame rate" toggle in the Display card
+        // "Show frame rate" toggle, first row of the System card
         assert!(!app.settings.show_fps);
-        let toggle = pos2(1075.0, 84.0 + 120.0 + 84.0);
+        let toggle = pos2(1075.0, 84.0 + 112.0 + 8.0);
         click(&mut off, &mut app, &mut t, toggle, toggle);
         assert!(app.settings.show_fps, "toggle should switch on");
+
+        click(&mut off, &mut app, &mut t, tab(2.0), tab(2.0));
+        assert_eq!(app.page, 2, "tab bar should switch to Controls");
 
         // drag the Frost slider all the way to the right
         let thumb = pos2(170.0 - 6.0 + 19.0 + (604.0 - 164.0 - 38.0) * 0.625, 84.0 + 112.0 + 38.0);
@@ -179,8 +182,8 @@ mod tests {
             t += 0.03;
         }
 
-        // compact tab bar: 360 wide, 10 from the bottom
-        let tab = pos2(220.0 + 5.16 + 116.6 * 2.5, 440.0);
+        // compact tab bar: 420 wide, 10 from the bottom; third item is Controls
+        let tab = pos2(190.0 + 5.16 + 102.42 * 2.5, 440.0);
         click(&mut off, &mut app, &mut t, tab, tab);
         assert_eq!(app.page, 2);
 
@@ -191,5 +194,74 @@ mod tests {
         let written: u32 = std::fs::read_to_string(dir.join("brightness")).unwrap().trim().parse().unwrap();
         assert_eq!(written, ((0.05 + 0.95 * b) * 255.0).round() as u32);
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Settings tab -> touch calibration on the 800x480 layout: tap the five
+    /// targets on a "screen" that reads too small and shifted, check the
+    /// fitted matrix, keep it, then let a second run time out and revert.
+    #[test]
+    fn touch_calibration_flow() {
+        use crate::calibrate::{self, TARGETS, TouchRequest};
+        unsafe { std::env::remove_var("KIOSK_DATA") };
+        let mut off = Offscreen::new([800, 480]).expect("EGL surfaceless context (needs Mesa)");
+        let mut app = KioskApp::new();
+        let mut t = 1.0;
+        for _ in 0..3 {
+            off.gfx.frame(&mut app, off.size, 1.0, vec![], t);
+            t += 0.03;
+        }
+        let tap = |off: &mut Offscreen, app: &mut KioskApp, t: &mut f64, p: egui::Pos2| click(off, app, t, p, p);
+
+        // Settings: fourth tab of the 420 wide compact bar
+        tap(&mut off, &mut app, &mut t, pos2(190.0 + 5.16 + 102.42 * 3.5, 440.0));
+        assert_eq!(app.page, 3, "tab bar should switch to Settings");
+
+        // "Calibrate" button, bottom left of the Touch screen card
+        let calibrate_btn = pos2(122.0, 355.0);
+        tap(&mut off, &mut app, &mut t, calibrate_btn);
+        assert!(app.calibrating(), "Calibrate should open the calibration screen");
+        assert_eq!(app.touch_request.take(), Some(TouchRequest::Matrix(calibrate::IDENTITY)), "raw touches while calibrating");
+
+        // a panel that reports touches 10% too small and shifted by (20, 12) px
+        let raw = |x: f32, y: f32| pos2(x * 0.9 + 20.0, y * 0.9 + 12.0);
+        for tg in TARGETS {
+            tap(&mut off, &mut app, &mut t, raw(tg[0] * 800.0, tg[1] * 480.0));
+        }
+        let m = match app.touch_request.take() {
+            Some(TouchRequest::Matrix(m)) => m,
+            r => panic!("expected the fitted matrix to be applied for testing, got {r:?}"),
+        };
+        let r = raw(400.0, 240.0);
+        let back = calibrate::apply(&m, [r.x / 800.0, r.y / 480.0]);
+        assert!((back[0] - 0.5).abs() < 0.002 && (back[1] - 0.5).abs() < 0.002, "centre maps to {back:?}");
+        assert_eq!(app.settings.touch_matrix, None, "nothing is saved before Keep");
+
+        // Keep (right of the two buttons at the bottom)
+        let keep = pos2(488.0, 420.0);
+        tap(&mut off, &mut app, &mut t, keep);
+        assert!(!app.calibrating());
+        assert_eq!(app.settings.touch_matrix, Some(m));
+        assert_eq!(app.touch_request.take(), None, "the kept matrix is already applied");
+
+        // second run: tap the targets, then don't confirm; it reverts after 15 s
+        tap(&mut off, &mut app, &mut t, calibrate_btn);
+        assert!(app.calibrating());
+        app.touch_request.take();
+        for tg in TARGETS {
+            tap(&mut off, &mut app, &mut t, pos2(tg[0] * 800.0, tg[1] * 480.0));
+        }
+        assert!(matches!(app.touch_request.take(), Some(TouchRequest::Matrix(_))));
+        for _ in 0..16 * 30 {
+            off.gfx.frame(&mut app, off.size, 1.0, vec![], t);
+            t += 1.0 / 30.0;
+        }
+        assert!(!app.calibrating(), "unconfirmed calibration should time out");
+        assert_eq!(app.touch_request.take(), Some(TouchRequest::Matrix(m)), "restores the kept calibration");
+        assert_eq!(app.settings.touch_matrix, Some(m));
+
+        // "Reset" next to Calibrate: back to the device default
+        tap(&mut off, &mut app, &mut t, pos2(294.0, 355.0));
+        assert_eq!(app.settings.touch_matrix, None);
+        assert_eq!(app.touch_request.take(), Some(TouchRequest::Default));
     }
 }

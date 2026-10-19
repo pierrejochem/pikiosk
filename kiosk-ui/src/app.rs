@@ -1,4 +1,4 @@
-//! The kiosk screen: wallpaper, status bar, three pages and a floating tab bar.
+//! The kiosk screen: wallpaper, status bar, four pages and a floating tab bar.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -8,6 +8,7 @@ use egui::{Align2, Color32, CornerRadius, Id, Key, LayerId, Order, Pos2, Rect, S
 
 use crate::glass::{BackdropParams, Glass, GlassSystem, Optics, Theme};
 use crate::backlight::Backlight;
+use crate::calibrate::{Calibration, Matrix, Outcome, TouchRequest};
 use crate::sysinfo::{self, Monitor};
 use crate::widgets::{self as w, ACCENT, GREEN, Icon, Sc, text};
 
@@ -22,11 +23,24 @@ pub struct Settings {
     pub theme: Theme,
     /// display backlight 0..1 (only used when the panel has one)
     pub brightness: f32,
+    /// touchscreen calibration from the Settings page; None = the device default (udev rule)
+    pub touch_matrix: Option<Matrix>,
+    /// when it was calibrated, shown on the Settings page
+    pub touch_date: String,
 }
 
 impl Default for Settings {
     fn default() -> Self {
-        Self { animate: true, show_fps: false, frost: 0.625, refraction: 0.5, theme: Theme::Aurora, brightness: 1.0 }
+        Self {
+            animate: true,
+            show_fps: false,
+            frost: 0.625,
+            refraction: 0.5,
+            theme: Theme::Aurora,
+            brightness: 1.0,
+            touch_matrix: None,
+            touch_date: String::new(),
+        }
     }
 }
 
@@ -44,6 +58,11 @@ impl Settings {
                 "refraction" => s.refraction = v.parse().unwrap_or(s.refraction),
                 "theme" => s.theme = Theme::from_name(v).unwrap_or(s.theme),
                 "brightness" => s.brightness = v.parse::<f32>().unwrap_or(s.brightness).clamp(0.0, 1.0),
+                "touch_matrix" => {
+                    let m: Vec<f32> = v.split_whitespace().filter_map(|x| x.parse().ok()).collect();
+                    s.touch_matrix = m.try_into().ok();
+                }
+                "touch_date" => s.touch_date = v.to_string(),
                 _ => {}
             }
         }
@@ -51,7 +70,7 @@ impl Settings {
     }
 
     fn save(&self, path: &PathBuf) {
-        let text = format!(
+        let mut text = format!(
             "animate={}\nshow_fps={}\nfrost={:.3}\nrefraction={:.3}\ntheme={}\nbrightness={:.3}\n",
             self.animate,
             self.show_fps,
@@ -60,13 +79,18 @@ impl Settings {
             self.theme.name(),
             self.brightness
         );
+        if let Some(m) = self.touch_matrix {
+            let m: Vec<String> = m.iter().map(|v| format!("{v:.6}")).collect();
+            text += &format!("touch_matrix={}\ntouch_date={}\n", m.join(" "), self.touch_date);
+        }
         if let Err(e) = std::fs::write(path, text) {
             log::warn!("could not save settings to {}: {e}", path.display());
         }
     }
 }
 
-const PAGES: [(Icon, &str); 3] = [(Icon::Home, "Home"), (Icon::Wifi, "Network"), (Icon::Sliders, "Controls")];
+const PAGES: [(Icon, &str); 4] =
+    [(Icon::Home, "Home"), (Icon::Wifi, "Network"), (Icon::Sliders, "Controls"), (Icon::Gear, "Settings")];
 
 pub struct KioskApp {
     pub glass: GlassSystem,
@@ -83,6 +107,10 @@ pub struct KioskApp {
     backlight: Option<Backlight>,
     /// called by the "Restart app" button
     pub on_restart: Option<Box<dyn Fn()>>,
+    /// the touch calibration screen, while it is open
+    calib: Option<Calibration>,
+    /// a touchscreen matrix change for the input backend to apply
+    pub touch_request: Option<TouchRequest>,
 }
 
 impl KioskApp {
@@ -124,6 +152,41 @@ impl KioskApp {
             last_time: None,
             cursor: None,
             on_restart: None,
+            calib: None,
+            touch_request: None,
+        }
+    }
+
+    #[cfg(test)]
+    pub fn calibrating(&self) -> bool {
+        self.calib.is_some()
+    }
+
+    /// The calibration the touchscreen should use outside the calibration screen.
+    pub fn touch_calibration(&self) -> TouchRequest {
+        self.settings.touch_matrix.map(TouchRequest::Matrix).unwrap_or(TouchRequest::Default)
+    }
+
+    /// Runs the calibration screen for this frame.
+    fn calibration(&mut self, ui: &mut Ui, l: &Lay, screen: Rect, time: f64) {
+        let glass = self.glass.clone();
+        let sc = Sc { gs: &glass, u: l.wu, alpha: 1.0, enabled: true };
+        let Some(c) = &mut self.calib else { return };
+        let outcome = c.ui(ui, l, sc, screen, time);
+        if let Some(r) = c.take_request() {
+            self.touch_request = Some(r);
+        }
+        match outcome {
+            Outcome::Running => {}
+            Outcome::Keep(m) => {
+                self.settings.touch_matrix = Some(m);
+                self.settings.touch_date = Local::now().format("%-d %b %Y").to_string();
+                self.calib = None;
+            }
+            Outcome::Revert => {
+                self.touch_request = Some(self.touch_calibration());
+                self.calib = None;
+            }
         }
     }
 
@@ -148,6 +211,12 @@ impl KioskApp {
             &painter,
             BackdropParams { time: time as f32, theme: self.settings.theme, animate: self.settings.animate },
         );
+
+        if self.calib.is_some() {
+            self.calibration(ui, &l, screen, time);
+            self.persist(&before);
+            return;
+        }
 
         // page navigation: arrow keys and horizontal swipes anywhere on the background
         ctx.input(|i| {
@@ -190,12 +259,13 @@ impl KioskApp {
             match i {
                 0 => self.home(ui, &l, sc, area, &info),
                 1 => self.network(ui, &l, sc, area, &info),
-                _ => self.controls(ui, &l, sc, area),
+                2 => self.controls(ui, &l, sc, area),
+                _ => self.settings_page(ui, &l, sc, area, time),
             }
         }
 
         // tab bar
-        let bar_w = l.v(400.0, 360.0);
+        let bar_w = l.v(480.0, 420.0);
         let bar_h = l.v(70.0, 60.0);
         let bar = Rect::from_min_size(pos2(screen.center().x - bar_w * 0.5, screen.bottom() - bar_h - l.v(24.0, 10.0)), vec2(bar_w, bar_h));
         w::tab_bar(ui, base, bar, Id::unique("tabs"), &PAGES, &mut self.page);
@@ -214,16 +284,7 @@ impl KioskApp {
             p.circle_stroke(pos, d * 0.5, Stroke::new(1.0, Color32::from_white_alpha(160)));
         }
 
-        if self.settings.brightness != before.brightness
-            && let Some(b) = &self.backlight
-        {
-            b.set(self.settings.brightness);
-        }
-        if self.settings != before
-            && let Some(path) = &self.settings_path
-        {
-            self.settings.save(path);
-        }
+        self.persist(&before);
 
         // repaint: every frame while animating, otherwise on the next full second
         if self.settings.animate {
@@ -231,6 +292,20 @@ impl KioskApp {
         } else {
             let ms = 1000 - Local::now().timestamp_subsec_millis().min(999);
             ctx.request_repaint_after(Duration::from_millis(ms as u64 + 5));
+        }
+    }
+
+    /// Applies and saves settings that changed this frame.
+    fn persist(&self, before: &Settings) {
+        if self.settings.brightness != before.brightness
+            && let Some(b) = &self.backlight
+        {
+            b.set(self.settings.brightness);
+        }
+        if self.settings != *before
+            && let Some(path) = &self.settings_path
+        {
+            self.settings.save(path);
         }
     }
 
@@ -424,19 +499,79 @@ impl KioskApp {
         } else {
             y += l.v(8.0, 14.0);
         }
-        for (label, sub, id, v) in [
-            ("Animated wallpaper", "Uses more GPU", "anim", &mut self.settings.animate),
-            ("Show frame rate", "Overlay at the top", "fps", &mut self.settings.show_fps),
-        ] {
-            text(&p, pos2(x, y - l.v(10.0, 8.0)), Align2::LEFT_CENTER, label, l.v(20.0, 16.0), sc.white(0.95));
-            text(&p, pos2(x, y + l.v(15.0, 11.0)), Align2::LEFT_CENTER, sub, l.v(15.0, 13.0), sc.white(0.6));
-            let (tw, th) = (l.v(70.0, 58.0), l.v(34.0, 30.0));
-            let t = Rect::from_min_size(pos2(xr - tw, y - th * 0.5), vec2(tw, th));
-            w::toggle(ui, sc, t, Id::unique(id), v);
-            y += l.v(84.0, 58.0);
+        Self::toggle_row(ui, l, sc, x, xr, y, "Animated wallpaper", "Uses more GPU", "anim", &mut self.settings.animate);
+    }
+
+    /// A label with a sub-label and a toggle on the right. Returns the y for the next row.
+    #[allow(clippy::too_many_arguments)]
+    fn toggle_row(ui: &mut Ui, l: &Lay, sc: Sc, x: f32, xr: f32, y: f32, label: &str, sub: &str, id: &str, on: &mut bool) -> f32 {
+        let p = ui.painter().clone();
+        text(&p, pos2(x, y - l.v(10.0, 8.0)), Align2::LEFT_CENTER, label, l.v(20.0, 16.0), sc.white(0.95));
+        text(&p, pos2(x, y + l.v(15.0, 11.0)), Align2::LEFT_CENTER, sub, l.v(15.0, 13.0), sc.white(0.6));
+        let (tw, th) = (l.v(70.0, 58.0), l.v(34.0, 30.0));
+        let t = Rect::from_min_size(pos2(xr - tw, y - th * 0.5), vec2(tw, th));
+        w::toggle(ui, sc, t, Id::unique(id), on);
+        y + l.v(84.0, 58.0)
+    }
+
+    /// Two buttons side by side at the bottom of a card.
+    fn button_pair(l: &Lay, x: f32, xr: f32, bottom: f32) -> (Rect, Rect) {
+        let gap = l.v(16.0, 12.0);
+        let bw = (xr - x - gap) * 0.5;
+        let bh = l.v(52.0, 42.0);
+        let a = Rect::from_min_size(pos2(x, bottom - bh), vec2(bw, bh));
+        (a, a.translate(vec2(bw + gap, 0.0)))
+    }
+
+    fn settings_page(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, time: f64) {
+        let p = ui.painter().clone();
+        let gap = l.v(24.0, 12.0);
+        let total = (area.width() - l.v(144.0, 44.0)).min(l.v(1000.0, 760.0));
+        let cw = (total - gap) * 0.5;
+        let top = l.v(84.0, 46.0);
+        let ch = l.v(470.0, 350.0);
+        let left = Rect::from_min_size(pos2(area.center().x - total * 0.5, top), vec2(cw, ch));
+        let right = left.translate(vec2(cw + gap, 0.0));
+        let pad = l.v(30.0, 20.0);
+        let first_row = l.v(112.0, 76.0);
+
+        // --- Touch screen card
+        sc.glass(&p, left, Glass::panel(l.v(34.0, 26.0)));
+        let x = left.left() + pad;
+        let xr = left.right() - pad;
+        text(&p, pos2(x, left.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "Touch screen", l.v(30.0, 22.0), sc.white(1.0));
+        let y = left.top() + first_row;
+        let (state, detail) = match self.settings.touch_matrix {
+            Some(_) => ("Calibrated", format!("on {}", self.settings.touch_date)),
+            None => ("Default", "from the system image".to_string()),
+        };
+        text(&p, pos2(x, y - l.v(10.0, 8.0)), Align2::LEFT_CENTER, "Calibration", l.v(20.0, 16.0), sc.white(0.95));
+        text(&p, pos2(x, y + l.v(15.0, 11.0)), Align2::LEFT_CENTER, &detail, l.v(15.0, 13.0), sc.white(0.6));
+        text(&p, pos2(xr, y), Align2::RIGHT_CENTER, state, l.v(18.0, 15.0), sc.white(0.9));
+        let help = ["Taps landing next to buttons?", "Calibrate and tap five crosses."];
+        for (i, line) in help.iter().enumerate() {
+            let ly = y + l.v(70.0, 52.0) + i as f32 * l.v(26.0, 20.0);
+            text(&p, pos2(x, ly), Align2::LEFT_CENTER, line, l.v(16.0, 14.0), sc.white(0.7));
+        }
+        let (calibrate, reset) = Self::button_pair(l, x, xr, left.bottom() - pad);
+        if w::button(ui, sc, calibrate, Id::unique("calibrate"), "Calibrate", Some(ACCENT)).clicked() {
+            self.calib = Some(Calibration::new(time));
+        }
+        if w::button(ui, sc, reset, Id::unique("touch-reset"), "Reset", None).clicked() {
+            self.settings.touch_matrix = None;
+            self.settings.touch_date.clear();
+            self.touch_request = Some(TouchRequest::Default);
         }
 
-        if !l.compact && self.backlight.is_none() {
+        // --- System card
+        sc.glass(&p, right, Glass::panel(l.v(34.0, 26.0)));
+        let x = right.left() + pad;
+        let xr = right.right() - pad;
+        text(&p, pos2(x, right.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "System", l.v(30.0, 22.0), sc.white(1.0));
+        let mut y = right.top() + first_row + l.v(8.0, 14.0);
+        y = Self::toggle_row(ui, l, sc, x, xr, y, "Show frame rate", "Overlay at the top", "fps", &mut self.settings.show_fps);
+
+        if !l.compact {
             let screen_px = ui.ctx().content_rect().size() * ui.ctx().pixels_per_point();
             let rows = [
                 ("Resolution", format!("{:.0} × {:.0}", screen_px.x, screen_px.y)),
@@ -449,13 +584,17 @@ impl KioskApp {
             }
         }
 
-        let bgap = l.v(16.0, 12.0);
-        let bw = (xr - x - bgap) * 0.5;
-        let bh = l.v(52.0, 42.0);
-        let reset = Rect::from_min_size(pos2(x, right.bottom() - pad - bh), vec2(bw, bh));
-        let restart = reset.translate(vec2(bw + bgap, 0.0));
-        if w::button(ui, sc, reset, Id::unique("reset"), "Reset", None).clicked() {
-            self.settings = Settings { theme: self.settings.theme, brightness: self.settings.brightness, ..Settings::default() };
+        let (reset, restart) = Self::button_pair(l, x, xr, right.bottom() - pad);
+        if w::button(ui, sc, reset, Id::unique("reset"), "Reset look", None).clicked() {
+            // look settings only: keep the wallpaper, brightness and touch calibration
+            let keep = self.settings.clone();
+            self.settings = Settings {
+                theme: keep.theme,
+                brightness: keep.brightness,
+                touch_matrix: keep.touch_matrix,
+                touch_date: keep.touch_date,
+                ..Settings::default()
+            };
         }
         if w::button(ui, sc, restart, Id::unique("restart"), "Restart app", Some(ACCENT)).clicked()
             && let Some(f) = &self.on_restart
@@ -548,4 +687,24 @@ fn load_photo(glass: &GlassSystem, path: &std::path::Path) -> Option<()> {
     glass.set_photo(rgba.width(), rgba.height(), rgba.into_raw());
     log::info!("wallpaper photo: {}", path.display());
     Some(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn touch_calibration_survives_save_and_load() {
+        let path = std::env::temp_dir().join(format!("kiosk-settings-{}.conf", std::process::id()));
+        let m = [1.06128, -0.00729, -0.03766, -0.01953, 1.10919, -0.08039];
+        let s = Settings { touch_matrix: Some(m), touch_date: "19 Oct 2026".into(), ..Settings::default() };
+        s.save(&path);
+        let back = Settings::load(&path);
+        std::fs::remove_file(&path).ok();
+        let got = back.touch_matrix.expect("matrix should be saved");
+        assert!(got.iter().zip(&m).all(|(a, b)| (a - b).abs() < 1e-5), "got {got:?}");
+        assert_eq!(back.touch_date, "19 Oct 2026");
+        // nothing saved: use the device's default (the udev rule)
+        assert_eq!(Settings::default().touch_matrix, None);
+    }
 }

@@ -63,6 +63,7 @@ pub enum Icon {
     Thermometer,
     Chip,
     Globe,
+    Gear,
 }
 
 pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
@@ -127,6 +128,14 @@ pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
             p.line_segment([at(3.5, 12.0), at(20.5, 12.0)], st);
             p.add(Shape::line(arc(19.0, 12.0, 9.5, PI * 0.72, PI * 1.28), st));
             p.add(Shape::line(arc(5.0, 12.0, 9.5, -PI * 0.28, PI * 0.28), st));
+        }
+        Icon::Gear => {
+            p.circle_stroke(at(12.0, 12.0), 3.0 * s, st);
+            p.circle_stroke(at(12.0, 12.0), 6.5 * s, st);
+            for i in 0..8 {
+                let (sin, cos) = (i as f32 * PI / 4.0).sin_cos();
+                p.line_segment([at(12.0 + 6.5 * cos, 12.0 + 6.5 * sin), at(12.0 + 9.5 * cos, 12.0 + 9.5 * sin)], st);
+            }
         }
     }
 }

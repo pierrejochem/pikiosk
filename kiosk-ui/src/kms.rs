@@ -17,11 +17,12 @@ use gbm::{AsRaw, BufferObject, BufferObjectFlags, Format};
 use input::event::keyboard::{KeyState, KeyboardEventTrait};
 use input::event::pointer::{Axis, ButtonState, PointerScrollEvent};
 use input::event::touch::{TouchEventPosition, TouchEventSlot};
-use input::event::{KeyboardEvent, PointerEvent, TouchEvent};
-use input::{Libinput, LibinputInterface};
+use input::event::{DeviceEvent, EventTrait, KeyboardEvent, PointerEvent, TouchEvent};
+use input::{AsRaw as _, DeviceCapability, Libinput, LibinputInterface};
 use khronos_egl as egl;
 
 use crate::app::KioskApp;
+use crate::calibrate::{IDENTITY, TouchRequest};
 use crate::gfx::{Gfx, pixels_per_point};
 
 struct Card(File);
@@ -241,6 +242,18 @@ impl InputState {
     }
 }
 
+/// Sets a touchscreen's libinput calibration matrix.
+fn apply_touch_calibration(dev: &mut input::Device, req: TouchRequest) {
+    let m = match req {
+        TouchRequest::Matrix(m) => m,
+        TouchRequest::Default => dev.config_calibration_default_matrix().unwrap_or(IDENTITY),
+    };
+    match dev.config_calibration_set_matrix(m) {
+        Ok(()) => log::info!("touch calibration for {}: {m:?}", dev.name()),
+        Err(e) => log::warn!("touch calibration for {}: {e:?}", dev.name()),
+    }
+}
+
 pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
     let out = open_output()?;
     let (w, h) = out.mode.size();
@@ -299,6 +312,10 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
         modifiers: Modifiers::default(),
     };
 
+    // touchscreens with a calibration matrix, and the calibration they should use
+    let mut touch_devices: Vec<input::Device> = Vec::new();
+    let mut touch_cal = app.touch_calibration();
+
     app.on_restart = Some(Box::new(|| {
         log::info!("restart requested");
         std::process::exit(0); // systemd restarts the service
@@ -321,6 +338,17 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
         if input.dispatch().is_ok() {
             let n = events.len();
             for ev in &mut input {
+                if let input::Event::Device(d) = &ev {
+                    let mut dev = ev.device();
+                    match d {
+                        DeviceEvent::Added(_) if dev.has_capability(DeviceCapability::Touch) && dev.config_calibration_has_matrix() => {
+                            apply_touch_calibration(&mut dev, touch_cal);
+                            touch_devices.push(dev);
+                        }
+                        DeviceEvent::Removed(_) => touch_devices.retain(|t| t.as_raw() != dev.as_raw()),
+                        _ => {}
+                    }
+                }
                 ist.handle(ev, &mut events);
             }
             if events.len() > n {
@@ -335,6 +363,12 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
         app.cursor = ist.mouse_visible.then_some(ist.pointer);
         last_frame = now;
         let delay = gfx.frame(&mut app, [w, h], ppp, std::mem::take(&mut events), start.elapsed().as_secs_f64());
+        if let Some(req) = app.touch_request.take() {
+            touch_cal = req;
+            for dev in &mut touch_devices {
+                apply_touch_calibration(dev, req);
+            }
+        }
         deadline = if delay == Duration::MAX { now + Duration::from_secs(3600) } else { now + delay.max(frame_interval) };
 
         egl.swap_buffers(display, egl_surface)?;
