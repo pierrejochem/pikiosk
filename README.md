@@ -1,6 +1,7 @@
 # pikiosk: Raspberry Pi kiosk OS with a Rust touchscreen UI
 
 [![Latest release](https://img.shields.io/github/v/release/pierrejochem/pikiosk)](https://github.com/pierrejochem/pikiosk/releases/latest)
+[![CI](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml/badge.svg)](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/pierrejochem/pikiosk)](LICENSE)
 
 A minimal, read-only kiosk OS for the **Raspberry Pi 3B (64-bit)**, built with Buildroot 2026.08.

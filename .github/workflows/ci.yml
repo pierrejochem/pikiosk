@@ -1,0 +1,44 @@
+# Builds kiosk-ui for x86_64 and runs its tests, including the UI tests that
+# render offscreen through Mesa's software rasteriser. The README badge shows
+# this workflow.
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  kiosk-ui:
+    name: kiosk-ui build and tests
+    runs-on: ubuntu-24.04
+    defaults:
+      run:
+        working-directory: kiosk-ui
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install libinput, udev, GBM, EGL and Mesa software GL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config libudev-dev libinput-dev libgbm-dev libegl-dev libegl-mesa0 libgles-dev libgl1-mesa-dri
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: kiosk-ui
+
+      - name: Build
+        run: cargo build --release --locked
+
+      # the tests change environment variables, so they run one at a time
+      - name: Test
+        run: cargo test --release --locked -- --test-threads=1
+        env:
+          LIBGL_ALWAYS_SOFTWARE: "1"

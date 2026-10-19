@@ -1,0 +1,79 @@
+# Builds the complete SD card image with Buildroot (1.5-2 h without caches).
+# Runs for version tags, attaching the image to that tag's release, and on
+# demand from the Actions tab, keeping the image as a workflow artifact.
+name: SD card image
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: image-${{ github.ref }}
+
+env:
+  BUILDROOT_VERSION: "2026.08"
+
+jobs:
+  image:
+    name: Buildroot SD card image
+    runs-on: ubuntu-24.04
+    timeout-minutes: 340
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Free disk space (a Buildroot build needs about 20 GB)
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Install Buildroot host packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            bc binutils build-essential bzip2 cpio file git libncurses-dev patch perl python3 rsync unzip wget xz-utils
+
+      # source tarballs and Rust crates; the build itself is not cached
+      - name: Cache downloads
+        uses: actions/cache@v4
+        with:
+          path: ~/br-dl
+          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('configs/pikiosk_rpi3_defconfig', 'kiosk-ui/Cargo.lock') }}
+          restore-keys: br-dl-${{ env.BUILDROOT_VERSION }}-
+
+      - name: Build
+        run: |
+          export BR2_DL_DIR="$HOME/br-dl"
+          git clone --depth 1 -b "$BUILDROOT_VERSION" https://gitlab.com/buildroot.org/buildroot.git "$RUNNER_TEMP/buildroot"
+          cd "$RUNNER_TEMP/buildroot"
+          make BR2_EXTERNAL="$GITHUB_WORKSPACE" O="$RUNNER_TEMP/out" pikiosk_rpi3_defconfig
+          make O="$RUNNER_TEMP/out"
+
+      - name: Compress
+        id: pack
+        run: |
+          name="pikiosk-${GITHUB_REF_NAME//\//-}-rpi3-sdcard.img"
+          [ "$GITHUB_REF_TYPE" = tag ] || name="pikiosk-${GITHUB_SHA::7}-rpi3-sdcard.img"
+          cp "$RUNNER_TEMP/out/images/sdcard.img" "$name"
+          xz -T0 -9 "$name"
+          sha256sum "$name.xz" > "$name.xz.sha256"
+          echo "file=$name.xz" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sdcard-image
+          path: |
+            ${{ steps.pack.outputs.file }}
+            ${{ steps.pack.outputs.file }}.sha256
+          retention-days: 14
+
+      - name: Attach to the release
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "pikiosk $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.file }}.sha256" --clobber
