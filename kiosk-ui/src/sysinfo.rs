@@ -3,7 +3,7 @@
 
 use std::fs;
 use std::net::Ipv4Addr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 #[derive(Clone, Debug)]
 pub struct Iface {
@@ -37,23 +37,35 @@ impl SysInfo {
     }
 }
 
+/// System info, refreshed once per second on a background thread so that
+/// reading /proc and the interfaces (5-8 ms on a Pi 3) never stalls a frame.
 pub struct Monitor {
     info: SysInfo,
-    last: Option<Instant>,
+    rx: std::sync::mpsc::Receiver<SysInfo>,
 }
 
 impl Default for Monitor {
     fn default() -> Self {
-        Self { info: SysInfo::default(), last: None }
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            loop {
+                std::thread::sleep(Duration::from_secs(1));
+                // the app is gone: stop
+                if tx.send(collect()).is_err() {
+                    break;
+                }
+            }
+        });
+        // first sample right away, so the first frame (and screenshots) have data
+        Self { info: collect(), rx }
     }
 }
 
 impl Monitor {
-    /// Returns current info, refreshing at most once per second.
+    /// Returns the newest info.
     pub fn get(&mut self) -> &SysInfo {
-        if self.last.is_none_or(|t| t.elapsed() >= Duration::from_secs(1)) {
-            self.info = collect();
-            self.last = Some(Instant::now());
+        if let Some(info) = self.rx.try_iter().last() {
+            self.info = info;
         }
         &self.info
     }

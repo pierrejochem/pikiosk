@@ -324,16 +324,36 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
     let fps: f64 = std::env::var("KIOSK_FPS").ok().and_then(|s| s.parse().ok()).filter(|f: &f64| *f >= 1.0).unwrap_or(30.0);
     let frame_interval = Duration::from_secs_f64(1.0 / fps);
     let start = Instant::now();
+    // the buffer on screen, and the one queued to replace it at the next vblank
     let mut current: Option<BufferObject<framebuffer::Handle>> = None;
+    let mut pending: Option<BufferObject<framebuffer::Handle>> = None;
     let mut deadline = Instant::now();
     let mut last_frame = Instant::now() - frame_interval;
     let mut events = Vec::new();
 
     loop {
-        // sleep until the next frame is due or input arrives
-        let timeout = deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(1));
-        let mut pfd = libc::pollfd { fd: input.as_raw_fd(), events: libc::POLLIN, revents: 0 };
-        unsafe { libc::poll(&mut pfd, 1, timeout.as_millis().min(i32::MAX as u128) as i32) };
+        // Sleep until input arrives, the queued page flip completes, or the next
+        // frame is due. Waiting for vsync here rather than blocking on it keeps
+        // input flowing to libinput, which warns when events wait over 20 ms.
+        let timeout = if pending.is_some() {
+            Duration::from_secs(1)
+        } else {
+            deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(1))
+        };
+        let mut pfds = [
+            libc::pollfd { fd: input.as_raw_fd(), events: libc::POLLIN, revents: 0 },
+            libc::pollfd { fd: gbm.as_fd().as_raw_fd(), events: libc::POLLIN, revents: 0 },
+        ];
+        unsafe { libc::poll(pfds.as_mut_ptr(), pfds.len() as libc::nfds_t, timeout.as_millis().min(i32::MAX as u128) as i32) };
+
+        if pfds[1].revents & libc::POLLIN != 0 {
+            for e in gbm.receive_events().context("drm events")? {
+                if let control::Event::PageFlip(_) = e {
+                    // the queued buffer is on screen; dropping the old one hands it back to GBM
+                    current = pending.take();
+                }
+            }
+        }
 
         if input.dispatch().is_ok() {
             let n = events.len();
@@ -356,7 +376,7 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
             }
         }
         let now = Instant::now();
-        if now < deadline {
+        if pending.is_some() || now < deadline {
             continue;
         }
 
@@ -383,18 +403,11 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
         };
         if current.is_none() {
             gbm.set_crtc(out.crtc, Some(fb), (0, 0), &[out.connector], Some(out.mode)).context("set mode")?;
+            current = Some(bo);
         } else {
+            // completes at the next vblank; the loop above picks up the event
             gbm.page_flip(out.crtc, fb, PageFlipFlags::EVENT, None).context("page flip")?;
-            // block until the flip completed (vsync)
-            'wait: loop {
-                for e in gbm.receive_events().context("drm events")? {
-                    if let control::Event::PageFlip(_) = e {
-                        break 'wait;
-                    }
-                }
-            }
+            pending = Some(bo);
         }
-        // dropping the previous buffer hands it back to GBM
-        current = Some(bo);
     }
 }
