@@ -1,0 +1,14 @@
+[Unit]
+Description=Apply /boot/kiosk.conf
+DefaultDependencies=no
+Wants=boot.mount network-pre.target
+After=local-fs.target boot.mount
+Before=sysinit.target network-pre.target systemd-networkd.service systemd-resolved.service systemd-timesyncd.service wpa_supplicant@wlan0.service dropbear.service kiosk.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/kiosk/apply-config
+
+[Install]
+WantedBy=sysinit.target

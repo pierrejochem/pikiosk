@@ -1,0 +1,18 @@
+# WiFi client on wlan0. A plain unit (not the wpa_supplicant@ template) on
+# purpose: Buildroot's preset-all applies "disable wpa_supplicant@.service"
+# to the rootfs image and would remove any enable link for the template.
+[Unit]
+Description=WiFi (wpa_supplicant on wlan0)
+# Only start WiFi when kiosk.conf contains a WIFI_SSID.
+ConditionPathExists=/run/kiosk/wpa_supplicant-wlan0.conf
+Requires=sys-subsystem-net-devices-wlan0.device
+After=kiosk-config.service sys-subsystem-net-devices-wlan0.device
+Before=network.target
+Wants=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/sbin/wpa_supplicant -c/etc/wpa_supplicant/wpa_supplicant-wlan0.conf -iwlan0
+
+[Install]
+WantedBy=multi-user.target

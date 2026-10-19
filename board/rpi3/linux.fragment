@@ -1,0 +1,20 @@
+CONFIG_WATCHDOG=y
+CONFIG_BCM2835_WDT=y
+# no penguin logo on the kiosk screen
+# CONFIG_LOGO is not set
+# USB touchscreen (Waveshare 5inch HDMI LCD (B)): built in, no module loading
+CONFIG_USB_HID=y
+CONFIG_HID_MULTITOUCH=y
+CONFIG_HID_GENERIC=y
+CONFIG_INPUT_EVDEV=y
+# target kmod has no xz support: store modules uncompressed so they can load
+# CONFIG_MODULE_COMPRESS is not set
+# display driver built in: picture from early boot, no dependency on module loading
+CONFIG_DRM=y
+CONFIG_DRM_VC4=y
+# HDMI CEC drags CEC_CORE in as a module, which would force vc4 to =m
+# CONFIG_DRM_VC4_HDMI_CEC is not set
+# DRM_VC4 depends on SND && SND_SOC; if those are modules it is limited to =m
+CONFIG_SOUND=y
+CONFIG_SND=y
+CONFIG_SND_SOC=y

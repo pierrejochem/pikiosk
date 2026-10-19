@@ -1,0 +1,4 @@
+# Put your SSH public key(s) here and rename this file to "authorized_keys".
+# Without that file, SSH stays off completely.
+# Then:  ssh root@kiosk.local
+# ssh-ed25519 AAAA... you@your-mac

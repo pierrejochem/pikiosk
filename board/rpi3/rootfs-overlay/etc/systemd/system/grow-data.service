@@ -1,0 +1,15 @@
+[Unit]
+Description=Grow /data to fill the SD card
+DefaultDependencies=no
+ConditionPathExists=/dev/mmcblk0p3
+After=dev-mmcblk0p3.device
+Requires=dev-mmcblk0p3.device
+Before=local-fs-pre.target data.mount systemd-fsck@dev-mmcblk0p3.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/libexec/kiosk/grow-data
+
+[Install]
+WantedBy=local-fs-pre.target

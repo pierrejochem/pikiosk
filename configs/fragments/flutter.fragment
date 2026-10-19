@@ -1,0 +1,4 @@
+# Flutter apps via flutter-pi (renders on KMS/GLES, no compositor).
+# In kiosk.conf: APP=/usr/bin/flutter-pi  APP_ARGS=--release /data/app/bundle
+BR2_PACKAGE_FLUTTER_PI=y
+BR2_PACKAGE_DEJAVU=y

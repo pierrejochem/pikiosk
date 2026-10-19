@@ -1,0 +1,3 @@
+# Unprivileged system account the kiosk app runs as. Locked password,
+# no shell: it can never be logged into.
+kiosk -1 kiosk -1 ! /data/app /bin/false video,render,input,audio Kiosk application

@@ -1,0 +1,163 @@
+#!/bin/sh
+# Turns /boot/kiosk.conf into runtime configuration under /run.
+# The root filesystem is read-only, so everything generated here lives in
+# tmpfs and is rebuilt on every boot; the symlinks pointing into /run/kiosk
+# are created at build time by post-build.sh.
+
+set -u
+
+CONF=/boot/kiosk.conf
+RUN=/run/kiosk
+
+log() { echo "kiosk-config: $*" >&2; }
+
+umask 022
+mkdir -p "$RUN" /run/systemd/network /run/systemd/timesyncd.conf.d
+
+# ---- defaults ---------------------------------------------------------------
+HOSTNAME=kiosk
+TIMEZONE=Etc/UTC
+NTP_SERVERS=
+WIFI_COUNTRY=
+WIFI_SSID=
+WIFI_PSK=
+WIFI_HIDDEN=no
+NETWORK=dhcp
+STATIC_IFACE=eth0
+STATIC_ADDRESS=
+STATIC_GATEWAY=
+STATIC_DNS=
+APP=/usr/bin/kiosk-ui
+APP_ARGS=
+APP_ENV=
+UI_FPS=
+UI_SCALE=
+UI_MODE=
+UI_OUTPUT=
+
+# ---- parse (never sourced: only whitelisted keys are accepted) ----------------
+if [ -r "$CONF" ]; then
+	# tolerate CRLF line endings from editors on Windows
+	tr -d '\r' < "$CONF" > "$RUN/kiosk.conf"
+	while IFS= read -r line || [ -n "$line" ]; do
+		case "$line" in
+			''|'#'*) continue ;;
+			*=*) ;;
+			*) log "ignoring line without '=': $line"; continue ;;
+		esac
+		key=$(printf '%s' "${line%%=*}" | tr -d ' \t')
+		# shellcheck disable=SC2034 # used through eval below
+		val=$(printf '%s' "${line#*=}" | sed -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' \
+			-e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'\$/\1/")
+		case "$key" in
+			HOSTNAME|TIMEZONE|NTP_SERVERS|WIFI_COUNTRY|WIFI_SSID|WIFI_PSK|WIFI_HIDDEN|\
+			NETWORK|STATIC_IFACE|STATIC_ADDRESS|STATIC_GATEWAY|STATIC_DNS|\
+			APP|APP_ARGS|APP_ENV|UI_FPS|UI_SCALE|UI_MODE|UI_OUTPUT)
+				eval "$key=\$val" ;;
+			*) log "ignoring unknown key '$key'" ;;
+		esac
+	done < "$RUN/kiosk.conf"
+	rm -f "$RUN/kiosk.conf"
+else
+	log "$CONF not found, using defaults"
+fi
+
+# ---- hostname -----------------------------------------------------------------
+case "$HOSTNAME" in
+	''|*[!A-Za-z0-9-]*|-*) log "invalid HOSTNAME '$HOSTNAME', using 'kiosk'"; HOSTNAME=kiosk ;;
+esac
+echo "$HOSTNAME" > /proc/sys/kernel/hostname
+
+# ---- timezone (/etc/localtime -> /run/kiosk/localtime) ------------------------------
+case "$TIMEZONE" in *..*) TIMEZONE=Etc/UTC ;; esac
+if [ ! -f "/usr/share/zoneinfo/$TIMEZONE" ]; then
+	log "unknown TIMEZONE '$TIMEZONE', using Etc/UTC"
+	TIMEZONE=Etc/UTC
+fi
+ln -sfn "/usr/share/zoneinfo/$TIMEZONE" "$RUN/localtime"
+
+# ---- NTP ------------------------------------------------------------------------------
+rm -f /run/systemd/timesyncd.conf.d/kiosk.conf
+if [ -n "$NTP_SERVERS" ]; then
+	printf '[Time]\nNTP=%s\n' "$NTP_SERVERS" > /run/systemd/timesyncd.conf.d/kiosk.conf
+fi
+
+# ---- WiFi (/etc/wpa_supplicant/wpa_supplicant-wlan0.conf -> /run/kiosk/...) ------------------
+WPA="$RUN/wpa_supplicant-wlan0.conf"
+rm -f "$WPA"
+if [ -n "$WIFI_SSID" ]; then
+	# SSID written as hex so any character in it is safe
+	ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -tx1 -v | tr -d ' \n')
+	(
+		umask 077
+		{
+			echo "ctrl_interface=/run/wpa_supplicant"
+			echo "update_config=0"
+			[ -n "$WIFI_COUNTRY" ] && echo "country=$WIFI_COUNTRY"
+			echo "network={"
+			echo "	ssid=$ssid_hex"
+			[ "$WIFI_HIDDEN" = yes ] && echo "	scan_ssid=1"
+			if [ -z "$WIFI_PSK" ]; then
+				echo "	key_mgmt=NONE"
+			else
+				echo "	key_mgmt=WPA-PSK WPA-PSK-SHA256 SAE"
+				echo "	ieee80211w=1"
+				if printf '%s' "$WIFI_PSK" | grep -Eq '^[0-9A-Fa-f]{64}$'; then
+					echo "	psk=$WIFI_PSK"
+				else
+					[ ${#WIFI_PSK} -ge 8 ] && [ ${#WIFI_PSK} -le 63 ] ||
+						log "WIFI_PSK must be 8-63 characters"
+					echo "	psk=\"$WIFI_PSK\""
+				fi
+			fi
+			echo "}"
+		} > "$WPA"
+	)
+fi
+
+# ---- static addressing (overrides the DHCP .network files in /etc) ------------------------
+NET=/run/systemd/network/10-kiosk-static.network
+rm -f "$NET"
+if [ "$NETWORK" = static ]; then
+	if [ -z "$STATIC_ADDRESS" ]; then
+		log "NETWORK=static but STATIC_ADDRESS is empty, staying on DHCP"
+	else
+		{
+			printf '[Match]\nName=%s\n\n[Network]\nAddress=%s\nMulticastDNS=yes\n' \
+				"$STATIC_IFACE" "$STATIC_ADDRESS"
+			[ -n "$STATIC_GATEWAY" ] && echo "Gateway=$STATIC_GATEWAY"
+			for dns in $STATIC_DNS; do echo "DNS=$dns"; done
+		} > "$NET"
+	fi
+fi
+
+# ---- SSH: enabled only if /boot/authorized_keys exists (~root/.ssh -> /run/kiosk/ssh) -------
+rm -rf "$RUN/ssh"
+if [ -s /boot/authorized_keys ]; then
+	mkdir -m 0700 "$RUN/ssh"
+	tr -d '\r' < /boot/authorized_keys > "$RUN/ssh/authorized_keys"
+	chmod 0600 "$RUN/ssh/authorized_keys"
+fi
+
+# ---- application (EnvironmentFile for kiosk.service) ---------------------------------------
+{
+	echo "KIOSK_APP=$APP"
+	echo "KIOSK_ARGS=$APP_ARGS"
+	# kiosk-ui display settings, validated so a typo can't break the unit file
+	case "$UI_FPS" in ''|*[!0-9]*) ;; *) echo "KIOSK_FPS=$UI_FPS" ;; esac
+	case "$UI_SCALE" in ''|*[!0-9.]*) ;; *) echo "KIOSK_SCALE=$UI_SCALE" ;; esac
+	case "$UI_OUTPUT" in dsi|hdmi) echo "KIOSK_OUTPUT=$UI_OUTPUT" ;; esac
+	printf '%s' "$UI_MODE" | grep -Eq '^[0-9]+x[0-9]+$' && echo "KIOSK_MODE=$UI_MODE"
+	for f in /boot/wallpaper.jpg /boot/wallpaper.jpeg /boot/wallpaper.png; do
+		if [ -f "$f" ]; then echo "KIOSK_WALLPAPER=$f"; break; fi
+	done
+	for kv in $APP_ENV; do
+		case "$kv" in
+			[A-Za-z_]*=*) echo "$kv" ;;
+			*) log "ignoring APP_ENV entry '$kv'" ;;
+		esac
+	done
+} > "$RUN/app.env"
+
+log "applied: host=$HOSTNAME tz=$TIMEZONE net=$NETWORK wifi=${WIFI_SSID:+on} ssh=$([ -d "$RUN/ssh" ] && echo on || echo off) app=$APP"
+exit 0

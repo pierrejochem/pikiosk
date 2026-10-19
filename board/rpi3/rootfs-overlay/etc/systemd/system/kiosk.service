@@ -1,0 +1,35 @@
+[Unit]
+Description=Kiosk application
+After=kiosk-config.service systemd-udev-trigger.service data.mount
+Wants=data.mount
+# crash loop protection: 5 failures in 2 minutes -> reboot the board
+StartLimitIntervalSec=120
+StartLimitBurst=5
+StartLimitAction=reboot
+
+[Service]
+User=kiosk
+Group=kiosk
+SupplementaryGroups=video render input audio
+EnvironmentFile=-/run/kiosk/app.env
+Environment=HOME=/data/app XDG_RUNTIME_DIR=/run/kiosk-app KIOSK_DATA=/data/app
+RuntimeDirectory=kiosk-app
+RuntimeDirectoryMode=0700
+WorkingDirectory=-/data/app
+ExecStartPre=+/bin/sh -c 'mkdir -p /data/app && chown kiosk:kiosk /data/app && chmod 0750 /data/app'
+ExecStart=/usr/libexec/kiosk/launch
+Restart=always
+RestartSec=2
+
+# hardening: the app can only write to its own data directory
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=-/data/app
+PrivateTmp=yes
+# ProtectKernelTunables is left off: it would make /sys read-only and stop
+# the app from setting the display backlight (group-writable via udev).
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,33 @@
+# pikiosk - Raspberry Pi 3B firmware configuration
+start_file=start.elf
+fixup_file=fixup.dat
+kernel=Image
+arm_64bit=1
+
+# Fast, quiet boot
+disable_splash=1
+boot_delay=0
+
+# Full KMS graphics driver (needed for Mesa VC4 / GBM / EGL)
+dtoverlay=vc4-kms-v3d
+max_framebuffers=2
+disable_overscan=1
+
+# Waveshare 5inch HDMI LCD (B) 800x480: no usable EDID, so force the output
+# on and set the mode explicitly (same values as a known-working DietPi setup)
+hdmi_force_hotplug=1
+hdmi_group=2
+hdmi_mode=87
+hdmi_cvt=800 480 60 6 0 0 0
+config_hdmi_boost=7
+max_usb_current=1
+gpu_mem=76
+
+# Hardware watchdog (systemd feeds it, see system.conf.d/watchdog.conf)
+dtparam=watchdog=on
+dtparam=audio=on
+
+# Bluetooth off; PL011 UART goes to GPIO 14/15 for a debug serial console
+# (kernel messages only, there is no login on it)
+dtoverlay=disable-bt
+enable_uart=1

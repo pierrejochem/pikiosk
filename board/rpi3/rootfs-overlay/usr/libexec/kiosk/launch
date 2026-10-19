@@ -1,0 +1,20 @@
+#!/bin/sh
+# Started by kiosk.service as the "kiosk" user. Waits for the GPU to show up,
+# then replaces itself with the configured application.
+
+# vc4 is a module; give udev a few seconds to create /dev/dri/card*
+i=0
+while ! ls /dev/dri/card* >/dev/null 2>&1 && [ $i -lt 50 ]; do
+	sleep 0.2
+	i=$((i + 1))
+done
+
+app=${KIOSK_APP:-/usr/bin/kiosk-ui}
+if [ ! -x "$app" ]; then
+	echo "kiosk: '$app' is not executable, falling back to kiosk-ui" >&2
+	app=/usr/bin/kiosk-ui
+fi
+
+# KIOSK_ARGS is split on spaces on purpose
+# shellcheck disable=SC2086
+exec "$app" ${KIOSK_ARGS:-}

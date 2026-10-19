@@ -1,0 +1,26 @@
+#!/bin/sh
+# First boot: grow partition 3 (/data) to the end of the SD card.
+# Idempotent - does nothing once there is less than 32 MiB left to claim.
+set -eu
+
+DISK=mmcblk0
+PART=${DISK}p3
+SYS=/sys/class/block
+
+[ -e "$SYS/$PART" ] || exit 0
+
+disk_size=$(cat "$SYS/$DISK/size")
+start=$(cat "$SYS/$PART/start")
+size=$(cat "$SYS/$PART/size")
+free=$((disk_size - start - size))
+
+# sizes are in 512-byte sectors; 65536 sectors = 32 MiB
+[ "$free" -gt 65536 ] || exit 0
+
+echo "grow-data: growing /dev/$PART by $((free / 2048)) MiB"
+echo ", +" | sfdisk --no-reread --no-tell-kernel -N 3 "/dev/$DISK"
+partx -u --nr 3 "/dev/$DISK"
+
+# e2fsck exits 1 when it fixed something, which is fine here
+e2fsck -f -y "/dev/$PART" || [ $? -le 1 ]
+resize2fs "/dev/$PART"

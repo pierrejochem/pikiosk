@@ -1,0 +1,43 @@
+image boot.vfat {
+	vfat {
+		label = "KIOSKBOOT"
+		files = {
+#BOOT_FILES#
+		}
+	}
+	size = 64M
+}
+
+# Persistent read-write storage: SSH host keys and app data.
+# Grows to fill the SD card on first boot.
+image data.ext4 {
+	ext4 {
+		label = "kioskdata"
+		use-mke2fs = true
+	}
+	empty = true
+	temporary = true
+	size = 64M
+}
+
+image sdcard.img {
+	hdimage {
+		align = 1M
+	}
+
+	partition boot {
+		partition-type = 0xC
+		bootable = "true"
+		image = "boot.vfat"
+	}
+
+	partition rootfs {
+		partition-type = 0x83
+		image = "rootfs.ext4"
+	}
+
+	partition data {
+		partition-type = 0x83
+		image = "data.ext4"
+	}
+}

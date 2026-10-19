@@ -1,0 +1,2 @@
+# -s: public-key authentication only, no passwords at all
+DROPBEAR_ARGS="-s"

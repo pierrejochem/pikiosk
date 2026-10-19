@@ -1,0 +1,18 @@
+config BR2_PACKAGE_KIOSK_UI
+	bool "kiosk-ui"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	depends on BR2_PACKAGE_HAS_LIBEGL
+	depends on BR2_PACKAGE_HAS_LIBGLES
+	depends on BR2_PACKAGE_HAS_LIBGBM
+	depends on BR2_PACKAGE_HAS_UDEV
+	select BR2_PACKAGE_HOST_RUSTC
+	select BR2_PACKAGE_LIBINPUT
+	help
+	  Fullscreen kiosk application written in Rust with egui:
+	  liquid-glass panels and controls rendered with GLES 2 on
+	  DRM/KMS, touch/mouse/keyboard via libinput.
+
+comment "kiosk-ui needs EGL, GLES, GBM and udev (systemd)"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	depends on !BR2_PACKAGE_HAS_LIBEGL || !BR2_PACKAGE_HAS_LIBGLES || \
+		!BR2_PACKAGE_HAS_LIBGBM || !BR2_PACKAGE_HAS_UDEV
