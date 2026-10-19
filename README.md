@@ -21,6 +21,14 @@ DRM/KMS and OpenGL ES 2, without X11 or Wayland. It includes on-device touchscre
 | Maintenance | SSH with public keys only, off unless you provide a key |
 | Robustness | hardware watchdog, app auto-restart, reboot on crash loop, kernel panic auto-reboot |
 
+## Download
+
+Get a ready-to-flash SD card image from the
+[latest release](https://github.com/pierrejochem/pikiosk/releases/latest):
+`pikiosk-<version>-rpi3-sdcard.img.xz`. Raspberry Pi Imager flashes it directly ("Use custom").
+Then edit `kiosk.conf` on the `KIOSKBOOT` partition, as described under
+[Configure](#configure-no-rebuild-needed).
+
 ## Build (macOS or Linux)
 
 Requires Docker. On Apple Silicon it builds natively (Buildroot compiles its own cross toolchain).
