@@ -1,0 +1,5 @@
+# Waveshare 5" HDMI LCD (B) USB touch (0eef:0005): uncalibrated, taps near
+# the top landed about 35 px too low. libinput applies this matrix to correct
+# it. Fitted from 12 taps on 4 on-screen targets (hostname, WiFi icon, Home
+# and Controls tabs); remaining error about 7 px RMS, the tap-to-tap scatter.
+ACTION=="add|change", KERNEL=="event*", ATTRS{idVendor}=="0eef", ATTRS{idProduct}=="0005", ENV{LIBINPUT_CALIBRATION_MATRIX}="1.06128 -0.00729 -0.03766 -0.01953 1.10919 -0.08039"
