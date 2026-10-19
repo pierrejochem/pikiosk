@@ -499,7 +499,10 @@ fn tile_card(p: &egui::Painter, l: &Lay, sc: Sc, r: Rect, icon: Icon, title: &st
     w::icon(p, icon, pos2(r.left() + ic, r.top() + ic), l.v(22.0, 17.0), sc.white(0.9));
     text(p, pos2(r.left() + l.v(54.0, 42.0), r.top() + ic), Align2::LEFT_CENTER, title, l.v(17.0, 14.0), sc.white(0.8));
     let pad = l.v(22.0, 16.0);
-    text(p, pos2(r.left() + pad, r.bottom() - l.v(56.0, 40.0)), Align2::LEFT_CENTER, value, l.v(34.0, 25.0), sc.white(1.0));
+    // shrink long values (e.g. a full IPv4 address on the 800x480 panel) to fit the card
+    let size = l.v(34.0, 25.0);
+    let size = size * ((r.width() - 2.0 * pad) / w::text_width(p, value, size)).min(1.0);
+    text(p, pos2(r.left() + pad, r.bottom() - l.v(56.0, 40.0)), Align2::LEFT_CENTER, value, size, sc.white(1.0));
     text(p, pos2(r.left() + pad, r.bottom() - l.v(24.0, 17.0)), Align2::LEFT_CENTER, sub, l.v(15.0, 13.0), sc.white(0.65));
 }
 

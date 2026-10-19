@@ -396,9 +396,13 @@ impl GlState {
             gl.buffer_data_u8_slice(glow::ARRAY_BUFFER, &bytes, glow::STATIC_DRAW);
             gl.bind_buffer(glow::ARRAY_BUFFER, None);
 
-            // GLES 2.0 (the Pi 3) has no vertex array objects; core profiles require one.
+            // Core profiles require a vertex array object. Plain GLES 2.0 has none, but
+            // when OES_vertex_array_object exists (the Pi 3's VC4) egui_glow uses one, so
+            // we need our own too: setting attribute 0 with egui's VAO bound would break
+            // every egui mesh drawn after the glass.
             let v = gl.version();
-            let vao = if v.is_embedded && v.major < 3 { None } else { Some(gl.create_vertex_array()?) };
+            let has_vao = !(v.is_embedded && v.major < 3) || gl.supported_extensions().contains("GL_OES_vertex_array_object");
+            let vao = if has_vao { Some(gl.create_vertex_array()?) } else { None };
             Ok(Self { quad, vao, progs, targets: None, photo: None, rendered: None })
         }
     }
