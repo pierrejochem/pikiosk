@@ -26,7 +26,12 @@ impl Gfx {
         }
         let painter = egui_glow::Painter::new(gl.clone(), "", None, true).map_err(|e| anyhow::anyhow!("egui painter: {e}"))?;
         let ctx = egui::Context::default();
-        ctx.options_mut(|o| o.theme_preference = egui::ThemePreference::Dark);
+        ctx.options_mut(|o| {
+            o.theme_preference = egui::ThemePreference::Dark;
+            // resistive panels jitter 8-13 px under a fingertip during one tap; with
+            // egui's default of 6 such taps turn into drags and never click
+            o.input_options.max_click_dist = 20.0;
+        });
         Ok(Self { ctx, painter, gl })
     }
 
