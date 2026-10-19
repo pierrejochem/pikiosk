@@ -1,8 +1,14 @@
-# pikiosk
+# pikiosk: Raspberry Pi kiosk OS with a Rust touchscreen UI
 
 A minimal, read-only kiosk OS for the **Raspberry Pi 3B (64-bit)**, built with Buildroot 2026.08.
 It boots straight into one fullscreen native application. There is no login prompt on the screen,
 on the serial port or anywhere else, and no desktop.
+
+Use it for touchscreen kiosks, digital signage, info displays and control panels. The included app,
+**kiosk-ui**, is written in Rust with egui and draws a liquid-glass interface directly through
+DRM/KMS and OpenGL ES 2, without X11 or Wayland. It includes on-device touchscreen calibration.
+
+![kiosk-ui home screen on a Raspberry Pi 3B with a Waveshare 5 inch 800x480 touchscreen: clock, network, uptime, CPU temperature and memory tiles](docs/kiosk-ui-home.png)
 
 | | |
 |---|---|
@@ -65,7 +71,7 @@ For SSH access, put your public key into a file named **`authorized_keys`** on t
 
 ## The kiosk app: kiosk-ui (Rust + egui, liquid glass)
 
-![kiosk-ui on the 800×480 panel](docs/kiosk-ui-home.png)
+![kiosk-ui Settings page with touchscreen calibration on the 800×480 panel](docs/kiosk-ui-settings.png)
 
 `kiosk-ui/` is the app that starts at boot: a Rust program using **egui** with **liquid-glass**
 panels and controls. Glass elements refract, frost and light the wallpaper behind them with a
@@ -201,3 +207,8 @@ build.sh, docker/                  containerised build
 - The kiosk-ui build downloads its Rust crates during `./build.sh` (versions pinned by `Cargo.lock`),
   so that step needs network access.
 - Glass refracts the wallpaper, not other UI elements underneath it (egui has no backdrop capture).
+
+## License
+
+MIT, see [LICENSE](LICENSE). Buildroot, the Linux kernel and the other packages in the image keep
+their own licenses.
