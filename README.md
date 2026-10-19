@@ -48,6 +48,11 @@ and `cmdline.txt` sets `video=HDMI-A-1:800x480@60e`. Touch is USB HID (built int
   panel with `/sys/class/backlight` (e.g. a DSI panel) it appears automatically.
 - kiosk-ui would prefer a DSI panel over HDMI if both were connected; `UI_OUTPUT=hdmi` in
   `kiosk.conf` reverses that.
+- The touch layer is resistive and single-touch. kiosk-ui accepts a tap that wobbles up to 20 px,
+  because a fingertip moves that much while pressed.
+- The image ships a touch calibration for this panel
+  (`board/rpi3/rootfs-overlay/etc/udev/rules.d/99-touch-calibration.rules`). To recalibrate on the
+  device, open **Settings → Calibrate** and tap the five crosses.
 
 ## Configure (no rebuild needed)
 
@@ -68,13 +73,21 @@ custom GLES 2 shader. It draws straight to the display through DRM/KMS + GBM + E
 Wayland), and reads touch, mouse and keyboard through libinput.
 
 The layout adapts: a compact design for 800×480 panels, a roomier one from 1280×720 up
-(`docs/kiosk-ui-1280x720.png`). Three pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
+(`docs/kiosk-ui-1280x720.png`). Four pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
 - **Home**: clock, date, network address, uptime, CPU temperature and memory
 - **Network**: interfaces with addresses and state, WiFi signal, gateway, DNS
 - **Controls**: frost and refraction sliders, wallpaper themes, brightness (on panels with a
-  backlight), animated-wallpaper and FPS toggles
+  backlight), animated-wallpaper toggle
+- **Settings** (`docs/kiosk-ui-settings.png`): touch calibration, frame-rate overlay, reset the look,
+  restart the app
 
-Settings changed on the Controls page are saved to `/data/app/kiosk-ui.conf`.
+**Touch calibration:** **Calibrate** shows five crosses, one after another. Tap the centre of each.
+kiosk-ui fits a libinput calibration matrix to the taps, then shows a check screen where dots mark
+where your touches land. **Keep** saves it. Without Keep, the previous calibration comes back after
+15 s, so a bad calibration can't lock you out. **Reset** returns to the image's default.
+
+Settings are saved to `/data/app/kiosk-ui.conf`. A touch calibration saved there survives
+re-flashing the root filesystem.
 
 **Run it on your Mac** while developing (opens a 1280×720 window):
 
@@ -90,7 +103,8 @@ kiosk-ui --screenshot shot.png --size 800x480 --page all
 ```
 
 `cargo test` drives the real UI with simulated touches (tab bar, toggle, slider, segmented
-control, swipe, brightness) at 1280×720 and 800×480 in an offscreen GL context.
+control, swipe, brightness, a full touch calibration) at 1280×720 and 800×480 in an offscreen GL
+context.
 
 Display settings live in `kiosk.conf` (`UI_FPS`, `UI_SCALE`, `UI_MODE`, `UI_OUTPUT`). Copy a photo named
 `wallpaper.jpg` onto the boot partition and pick "Photo" on the Controls page to put the glass
@@ -105,7 +119,8 @@ Source layout:
 kiosk-ui/src/glass.rs     glass renderer: wallpaper, blur chain, glass shader as egui paint callbacks
 kiosk-ui/src/shaders/     GLSL ES 1.00 shaders (re-prefixed for desktop GL on the Mac)
 kiosk-ui/src/widgets.rs   glass button, toggle, slider, segmented control, tab bar, icons
-kiosk-ui/src/app.rs       the three pages
+kiosk-ui/src/app.rs       the four pages and settings
+kiosk-ui/src/calibrate.rs touch calibration: affine fit and the calibration screen
 kiosk-ui/src/kms.rs       DRM/KMS + GBM + EGL + libinput backend (prefers the DSI panel)
 kiosk-ui/src/backlight.rs display brightness via /sys/class/backlight
 kiosk-ui/src/headless.rs  offscreen rendering, screenshots, UI test
