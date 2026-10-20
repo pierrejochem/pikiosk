@@ -2,6 +2,8 @@
 
 Oct 20, 2026 · @Pierre Jochem
 
+**Status (v0.2.0):** all seven phases are built; the Pi 3B was tested on hardware for phases 3 to 6. The Pi 4 and Pi 5 images are built by CI and still need a first run on hardware. See the status sections at the end for what differs from this plan.
+
 UI sketch: Design canvas "pikiosk Apps page" (https://claude.ai/artifact/DrLwMSn99S25ToFUaZxoon).
 
 ## Overview

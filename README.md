@@ -18,9 +18,11 @@ DRM/KMS and OpenGL ES 2, without X11 or Wayland. It includes on-device touchscre
 |---|---|
 | Kernel | Raspberry Pi kernel 6.12 (arm64), KMS graphics |
 | Init | systemd, read-only root filesystem, logs in RAM |
+| Boards | Raspberry Pi 3B, Pi 4 and Pi 5, one image per board |
 | Display | Waveshare 5inch HDMI LCD (B): 800×480, USB touch |
-| Graphics | DRM/KMS + Mesa VC4: EGL, GLES2, GBM (no X11/Wayland needed) |
+| Graphics | DRM/KMS + Mesa (VC4 on the Pi 3B, VC4 + V3D on the Pi 4 and 5): EGL, GLES2, GBM, no X11/Wayland |
 | App | `kiosk-ui`: Rust + egui with liquid-glass widgets, touch via libinput |
+| Apps | installable packages (`.kpkg`) from a signed store or from the SD card, one on screen at a time |
 | Network | Ethernet + onboard WiFi (DHCP or static), DNS, NTP, mDNS (`kiosk.local`) |
 | Maintenance | SSH with public keys only, off unless you provide a key |
 | Robustness | hardware watchdog, app auto-restart, reboot on crash loop, kernel panic auto-reboot |
@@ -44,6 +46,8 @@ Requires Docker. On Apple Silicon it builds natively (Buildroot compiles its own
 ```
 
 Flash `out/sdcard.img` with Raspberry Pi Imager ("Use custom") or `dd`.
+
+`BOARD=rpi4 ./build.sh` or `BOARD=rpi5 ./build.sh` build the other boards into `out/sdcard-<board>.img`.
 
 Other commands: `./build.sh app`, `./build.sh menuconfig`, `./build.sh savedefconfig`, `./build.sh shell`, `./build.sh clean`.
 
@@ -94,8 +98,9 @@ custom GLES 2 shader. It draws straight to the display through DRM/KMS + GBM + E
 Wayland), and reads touch, mouse and keyboard through libinput.
 
 The layout adapts: a compact design for 800×480 panels, a roomier one from 1280×720 up
-(`docs/kiosk-ui-1280x720.png`). Four pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
+(`docs/kiosk-ui-1280x720.png`). Five pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
 - **Home**: clock, date, network address, uptime, CPU temperature and memory
+- **Apps**: the installed apps as tiles, and the Store (see [Apps and the app store](#apps-and-the-app-store))
 - **Network**: interfaces with addresses and state, WiFi signal, gateway, DNS
 - **Controls**: frost and refraction sliders, wallpaper themes, brightness (on panels with a
   backlight), animated-wallpaper toggle
@@ -149,23 +154,73 @@ kiosk-ui/src/headless.rs   offscreen rendering, screenshots, UI test
 kiosk-ui/src/desktop.rs    eframe window for development
 ```
 
-## Apps (in development)
+## Apps and the app store
 
-Apps are packages (`.kpkg`) that run one at a time on the display; kiosk-ui is always home. The
-plan is in [docs/app-store.md](docs/app-store.md). What works today:
+![The Apps page: installed apps as glass tiles and the Store tile](docs/kiosk-ui-apps.png)
+
+Apps are packages (`.kpkg`) built on [`kiosk-kit`](kiosk-kit/), the crate kiosk-ui itself uses for the
+display, touch and the glass look. **One app owns the screen at a time**: tapping a tile stops kiosk-ui
+and starts the app, and kiosk-ui comes back when the app ends. **Hold the top-right corner of the
+screen for 3 seconds** to leave an app, even a hung one. The design and what was built in each phase
+are in [docs/app-store.md](docs/app-store.md).
+
+| Where apps come from | How |
+|---|---|
+| The signed store | set `STORE_URL` in `kiosk.conf`. The store is a [TUF](https://theupdateframework.io) repository ([pikiosk-apps](https://github.com/pierrejochem/pikiosk-apps) is the publisher): every package is checked for signature, expiry, rollback and hash before it is unpacked. The board checks it only after NTP has set the clock |
+| The SD card | development only: put `.kpkg` files in an `apps` folder on `KIOSKBOOT` and set `STORE_ALLOW_UNSIGNED=yes` |
+
+Both are **off by default**: with an empty `STORE_URL` and no `STORE_PIN`, the Store tile is hidden
+and nobody can install anything. Installed apps never need the network.
+
+![The admin PIN keypad](docs/kiosk-ui-pin.png)
+
+**Admin PIN.** Installing, updating and removing apps needs the PIN from `STORE_PIN` in `kiosk.conf`
+(4 to 8 digits). The Store tile asks for it on a glass keypad. kioskd checks the PIN; kiosk-ui only
+holds a token that ends 60 s after the last touch. After 3 wrong PINs every PIN is refused for
+`STORE_PIN_LOCKOUT` seconds (default 300), and pulling the power does not reset that. Anyone who can
+read the SD card can read the PIN in `kiosk.conf`.
+
+![The Store catalog](docs/kiosk-ui-catalog.png)
+
+**Installs and updates** replace the old version in one atomic step, so pulling the power mid-install
+leaves the previous version running. The app's own data in `/data/store/data/<id>` survives updates
+and re-flashing.
+
+![An app's detail page](docs/kiosk-ui-detail.png)
+
+**Health gate and rollback.** The first time a new version runs it has 30 s to stay up. If it crashes
+instead, the kiosk switches back to the previous version, deletes and blocks the bad one, and shows a
+notice.
+
+![The rollback notice](docs/kiosk-ui-rollback.png)
+
+### Store settings in `kiosk.conf`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `STORE_URL` | empty (store off) | base URL of the store, e.g. `https://example.github.io/pikiosk-apps`; the board reads `<url>/<channel>/metadata` and `/targets` |
+| `STORE_CHANNEL` | `stable` | `stable` or `beta` |
+| `STORE_PIN` | empty (nobody is admin) | 4 to 8 digits |
+| `STORE_PIN_LOCKOUT` | `300` | seconds every PIN is refused after 3 wrong ones |
+| `STORE_ALLOW_UNSIGNED` | `no` | install unsigned `.kpkg` files from `/boot/apps` (development) |
+| `KIOSK_HOME_GESTURE` | `yes` | the 3 s top-right hold that leaves an app |
+
+### Publishing an app
+
+An app is a Rust crate that implements `kiosk_kit::App` and calls `kiosk_kit::run`, plus a
+`manifest.toml` and a 128×128 icon. Start from `apps/hello` in
+[pikiosk-apps](https://github.com/pierrejochem/pikiosk-apps), which also holds the key ceremony, the
+publish workflow and the instructions. Each release attaches an SDK (`pikiosk-<version>-sdk-aarch64.tar.gz`)
+whose sysroot the workflow links against, so one binary runs on all three boards.
 
 ```sh
-cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg   # lints manifest.toml, icon, entry
+cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg   # lints manifest.toml, icon and entry
+cargo run --release -p kpkg -- inspect my-app.kpkg
 ```
 
-Apps can also come from a signed store (a TUF repository, see
-[pikiosk-apps](https://github.com/pierrejochem/pikiosk-apps)): set `STORE_URL` in `kiosk.conf`. The board
-checks the store only after NTP has set the clock; installed apps run without the network.
-
-Copy the package to an `apps` folder on the `KIOSKBOOT` partition, set `STORE_ALLOW_UNSIGNED=yes` in
-`kiosk.conf`, and install it from **Apps → Local packages** on the touchscreen. Tap an app tile to
-start it; hold the top-right corner of the screen for 3 seconds to go back to kiosk-ui. Installs
-are atomic: pulling the power during one leaves the previous version in place.
+> The trust anchor in this repository (`package/kioskd/root.json`) is a **development root**: its
+> private keys are on the maintainer's machine. Do not publish to real devices before running the key
+> ceremony from pikiosk-apps and building a new image with the new `root.json`.
 
 ## Running a different app
 
@@ -228,17 +283,21 @@ board/common/post-build.sh         disables all logins, wires ro rootfs to /run 
 board/common/rootfs-overlay/       systemd units, network files, config scripts
 board/common/boot/                 files placed on the FAT partition
 board/common/linux.fragment        kernel options shared by all boards
-Cargo.toml                         Cargo workspace: kiosk-ui and kiosk-kit
-kiosk-kit/                         display, touch and glass widgets as a library
-kiosk-ui/                          the kiosk app (Rust, egui, liquid glass)
-package/kiosk-ui/                  Buildroot package for it
+Cargo.toml                         Cargo workspace
+kiosk-kit/                         display, touch and glass widgets as a library (what apps build on)
+kiosk-ui/                          the kiosk app (Rust, egui, liquid glass), with the Apps page
+kioskd/                            root daemon: launches apps, Home gesture, installs, PIN, health gate
+kpkg/                              .kpkg format and tool: build, inspect, verify, catalog
+package/kiosk-ui, package/kioskd/  Buildroot packages (kioskd carries the trust anchor root.json)
+CHANGELOG.md                       what changed in each release
 build.sh, docker/                  containerised build
 ```
 
 ## Notes
 
 - The serial console on GPIO 14/15 (115200 baud) prints kernel messages only; there is no shell on it.
-- The board has no RTC, so the clock is correct only after NTP sync over the network.
+- The board has no RTC (the Pi 5 has one, with an optional battery), so the clock is correct only after NTP sync. The store checks for updates only after that.
+- The Pi 4 and Pi 5 images are built by CI and have not been run on hardware yet; both need a micro-HDMI adapter for the Waveshare panel. The Pi 3B is the tested board.
 - WPA3-only networks will not work: the Pi 3B's WiFi chip does not support SAE. WPA2 and WPA2/WPA3 mixed mode work.
 - Debugging over SSH: `journalctl -u kiosk -f`, `networkctl`, `wpa_cli -i wlan0 status`.
 - The kiosk-ui build downloads its Rust crates during `./build.sh` (versions pinned by `Cargo.lock`),

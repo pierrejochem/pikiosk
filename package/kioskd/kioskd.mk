@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-KIOSKD_VERSION = 0.1.0
+KIOSKD_VERSION = 0.2.0
 # the Cargo workspace root, like kiosk-ui
 KIOSKD_SITE = $(BR2_EXTERNAL_PIKIOSK_PATH)
 KIOSKD_SITE_METHOD = local
