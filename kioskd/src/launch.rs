@@ -9,20 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use anyhow::{Context, Result, anyhow, bail};
-use serde::Deserialize;
 
-/// The part of an app's manifest the launcher needs.
-#[derive(Debug, Deserialize)]
-pub struct Manifest {
-    pub id: String,
-    pub entry: String,
-    #[serde(default)]
-    pub permissions: Vec<String>,
-    #[serde(default)]
-    pub args: Vec<String>,
-    #[serde(default)]
-    pub env: Vec<String>,
-}
+pub use kpkg::{Manifest, valid_id};
 
 pub fn store_dir() -> PathBuf {
     std::env::var_os("KIOSKD_STORE").map(PathBuf::from).unwrap_or_else(|| "/data/store".into())
@@ -30,15 +18,6 @@ pub fn store_dir() -> PathBuf {
 
 fn unit_dir() -> PathBuf {
     std::env::var_os("KIOSKD_UNIT_DIR").map(PathBuf::from).unwrap_or_else(|| "/run/systemd/system".into())
-}
-
-/// An app id is a short reverse-DNS style name. The check keeps it safe to
-/// use in a path and in a unit name.
-pub fn valid_id(id: &str) -> bool {
-    !id.is_empty()
-        && id.len() <= 64
-        && !id.starts_with(['.', '-'])
-        && id.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_'))
 }
 
 /// Quotes one word for a systemd `ExecStart=` or `Environment=` line.
@@ -79,7 +58,7 @@ fn resolve(id: &str) -> Result<(Manifest, PathBuf)> {
     let app_dir = store_dir().join("apps").join(id);
     let current = app_dir.join("current");
     let text = std::fs::read_to_string(current.join("manifest.toml")).with_context(|| format!("{id} is not installed"))?;
-    let manifest: Manifest = toml::from_str(&text).context("bad manifest.toml")?;
+    let manifest = Manifest::parse(&text)?;
     if manifest.id != id {
         bail!("manifest is for {}, not {id}", manifest.id);
     }
@@ -180,16 +159,13 @@ mod tests {
     use super::*;
 
     fn manifest(toml: &str) -> Manifest {
-        toml::from_str(toml).unwrap()
-    }
-
-    #[test]
-    fn ids_are_checked() {
-        assert!(valid_id("de.jochem.weather"));
-        assert!(valid_id("clock_2"));
-        for bad in ["", ".hidden", "-x", "Upper", "a b", "a/b", "../x", "a@b", &"a".repeat(65)] {
-            assert!(!valid_id(bad), "{bad:?} should be rejected");
+        let mut t = toml.to_string();
+        // the launcher tests only care about the fields they set
+        if !t.contains("version") {
+            t += "\nversion='1.0.0'\nname='T'";
         }
+        let m: Manifest = toml::from_str(&t).unwrap();
+        m
     }
 
     #[test]
@@ -227,11 +203,14 @@ mod tests {
         // SAFETY: tests that touch KIOSKD_* run in this one test
         unsafe { std::env::set_var("KIOSKD_STORE", &tmp) };
 
-        let write = |entry: &str| std::fs::write(app.join("manifest.toml"), format!("id='t.app'\nentry='{entry}'\n")).unwrap();
+        let write = |entry: &str| std::fs::write(app.join("manifest.toml"), format!("id='t.app'\nversion='1.0.0'\nname='T'\nentry='{entry}'\n")).unwrap();
         write("bin/ok");
         assert!(resolve("t.app").is_ok());
         write("../../../outside");
-        assert!(resolve("t.app").unwrap_err().to_string().contains("leaves"), "escape via ..");
+        assert!(resolve("t.app").is_err(), "escape via ..");
+        std::os::unix::fs::symlink(tmp.join("outside"), app.join("bin/evil")).unwrap();
+        write("bin/evil");
+        assert!(resolve("t.app").unwrap_err().to_string().contains("leaves"), "escape via a symlink");
         write("bin/missing");
         assert!(resolve("t.app").is_err());
         assert!(resolve("other.app").is_err());

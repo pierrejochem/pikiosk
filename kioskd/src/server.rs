@@ -9,13 +9,18 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{home, launch};
+use crate::{home, install, launch};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
 enum Request {
     Launch { id: String },
     Stop,
+    Install { path: String },
+    Remove { id: String },
+    List,
+    Local,
+    Status,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -23,6 +28,8 @@ pub struct Reply {
     pub ok: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub error: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub data: Option<serde_json::Value>,
 }
 
 pub fn sock_path() -> PathBuf {
@@ -30,16 +37,23 @@ pub fn sock_path() -> PathBuf {
 }
 
 fn handle(line: &str) -> Reply {
-    let result = match serde_json::from_str::<Request>(line) {
-        Ok(Request::Launch { id }) => launch::launch(&id),
-        Ok(Request::Stop) => launch::stop(),
+    let paths = install::Paths::from_env();
+    let json = |v: serde_json::Result<serde_json::Value>| v.map(Some).map_err(anyhow::Error::from);
+    let result: anyhow::Result<Option<serde_json::Value>> = match serde_json::from_str::<Request>(line) {
+        Ok(Request::Launch { id }) => launch::launch(&id).map(|()| None),
+        Ok(Request::Stop) => launch::stop().map(|()| None),
+        Ok(Request::Install { path }) => install::install(&paths, &path, &launch::running_apps()).and_then(|a| json(serde_json::to_value(a))),
+        Ok(Request::Remove { id }) => install::remove(&paths, &id, &launch::running_apps()).map(|()| None),
+        Ok(Request::List) => json(serde_json::to_value(install::installed(&paths))),
+        Ok(Request::Local) => json(serde_json::to_value(install::local(&paths))),
+        Ok(Request::Status) => json(Ok(serde_json::json!({ "allow_unsigned": paths.allow_unsigned, "board": paths.board }))),
         Err(e) => Err(anyhow::anyhow!("bad request: {e}")),
     };
     match result {
-        Ok(()) => Reply { ok: true, error: None },
+        Ok(data) => Reply { ok: true, error: None, data },
         Err(e) => {
             log::warn!("request failed: {e:#}");
-            Reply { ok: false, error: Some(format!("{e:#}")) }
+            Reply { ok: false, error: Some(format!("{e:#}")), data: None }
         }
     }
 }
@@ -75,6 +89,7 @@ pub fn run() -> Result<()> {
     let _ = std::fs::remove_file(&path);
     let listener = UnixListener::bind(&path).with_context(|| format!("binding {}", path.display()))?;
     open_to_kiosk_group(&path)?;
+    install::recover(&install::Paths::from_env());
     log::info!("listening on {}", path.display());
 
     if std::env::var("KIOSKD_HOME_GESTURE").as_deref() != Ok("no") {

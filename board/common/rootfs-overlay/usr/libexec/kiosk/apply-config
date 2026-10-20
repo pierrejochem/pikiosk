@@ -35,6 +35,7 @@ UI_SCALE=
 UI_MODE=
 UI_OUTPUT=
 KIOSK_HOME_GESTURE=yes
+STORE_ALLOW_UNSIGNED=no
 
 # ---- parse (never sourced: only whitelisted keys are accepted) ----------------
 if [ -r "$CONF" ]; then
@@ -53,7 +54,7 @@ if [ -r "$CONF" ]; then
 		case "$key" in
 			HOSTNAME|TIMEZONE|NTP_SERVERS|WIFI_COUNTRY|WIFI_SSID|WIFI_PSK|WIFI_HIDDEN|\
 			NETWORK|STATIC_IFACE|STATIC_ADDRESS|STATIC_GATEWAY|STATIC_DNS|\
-			APP|APP_ARGS|APP_ENV|UI_FPS|UI_SCALE|UI_MODE|UI_OUTPUT|KIOSK_HOME_GESTURE)
+			APP|APP_ARGS|APP_ENV|UI_FPS|UI_SCALE|UI_MODE|UI_OUTPUT|KIOSK_HOME_GESTURE|STORE_ALLOW_UNSIGNED)
 				eval "$key=\$val" ;;
 			*) log "ignoring unknown key '$key'" ;;
 		esac
@@ -161,7 +162,10 @@ fi
 } > "$RUN/app.env"
 
 # ---- app launcher (EnvironmentFile for kioskd.service) ---------------------------------------
-case "$KIOSK_HOME_GESTURE" in no) echo "KIOSKD_HOME_GESTURE=no" ;; *) echo "KIOSKD_HOME_GESTURE=yes" ;; esac > "$RUN/kioskd.env"
+{
+	case "$KIOSK_HOME_GESTURE" in no) echo "KIOSKD_HOME_GESTURE=no" ;; *) echo "KIOSKD_HOME_GESTURE=yes" ;; esac
+	case "$STORE_ALLOW_UNSIGNED" in yes) echo "KIOSKD_ALLOW_UNSIGNED=yes" ;; *) echo "KIOSKD_ALLOW_UNSIGNED=no" ;; esac
+} > "$RUN/kioskd.env"
 
 log "applied: host=$HOSTNAME tz=$TIMEZONE net=$NETWORK wifi=${WIFI_SSID:+on} ssh=$([ -d "$RUN/ssh" ] && echo on || echo off) app=$APP"
 exit 0

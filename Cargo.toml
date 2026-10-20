@@ -1,5 +1,5 @@
 [workspace]
-members = ["kiosk-ui", "kiosk-kit", "kioskd"]
+members = ["kiosk-ui", "kiosk-kit", "kioskd", "kpkg"]
 resolver = "3"
 
 [workspace.package]
