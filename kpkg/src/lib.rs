@@ -403,7 +403,7 @@ mod tests {
         fs::create_dir_all(root.join("repo")).unwrap();
         pack(&d, &root.join("repo/weather-1.5.0.kpkg")).unwrap();
         let t = fs::read_to_string(d.join("manifest.toml")).unwrap();
-        fs::write(d.join("manifest.toml"), t.replace("1.5.0", "1.10.0").replace("[", "[") + "category='Weather'\n").unwrap();
+        fs::write(d.join("manifest.toml"), t.replace("1.5.0", "1.10.0") + "category='Weather'\n").unwrap();
         pack(&d, &root.join("repo/weather-1.10.0.kpkg")).unwrap();
         fs::write(root.join("repo/notes.txt"), "ignored").unwrap();
 

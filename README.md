@@ -158,6 +158,10 @@ plan is in [docs/app-store.md](docs/app-store.md). What works today:
 cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg   # lints manifest.toml, icon, entry
 ```
 
+Apps can also come from a signed store (a TUF repository, see
+[pikiosk-apps](https://github.com/pierrejochem/pikiosk-apps)): set `STORE_URL` in `kiosk.conf`. The board
+checks the store only after NTP has set the clock; installed apps run without the network.
+
 Copy the package to an `apps` folder on the `KIOSKBOOT` partition, set `STORE_ALLOW_UNSIGNED=yes` in
 `kiosk.conf`, and install it from **Apps → Local packages** on the touchscreen. Tap an app tile to
 start it; hold the top-right corner of the screen for 3 seconds to go back to kiosk-ui. Installs

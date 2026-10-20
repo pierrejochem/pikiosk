@@ -80,7 +80,7 @@ Use The Update Framework (TUF) through the `tough` crate rather than a home-made
 
 - **Trust anchor:** `root.json` is baked into the rootfs at `/usr/share/kioskd/root.json` by the Buildroot package; changing it means a new image. Root key offline, targets key in CI, timestamp key on the server.
 - **No clock before NTP:** TUF rejects expired metadata, and until `systemd-timesyncd` syncs, a Pi 3B or Pi 4 thinks it is 1970 or the build date. `kioskd` checks for updates only after `/run/systemd/timesync/synchronized` exists, on every board including the Pi 5 so all three behave alike. Installs from cache or local media check signatures and hashes but skip the expiry check.
-- **Transport:** HTTPS via `reqwest` with `rustls` and the webpki roots compiled in, so no CA bundle is needed in the image.
+- **Transport:** `tough`'s HTTP transport (`reqwest` + `rustls`, verifying with the system certificates). The image therefore ships `ca-certificates`; without a CA bundle the HTTP client cannot even be built, so the store is unusable without it. (Phase 5 change: the first draft compiled the webpki roots in.)
 - **Verify before unpack:** length and hash from targets metadata, then the manifest: id matches, `min_os` ≤ this image, this board is in `boards`, permissions no wider than the catalog approved.
 - **Atomic install on power loss:** download to `cache/` → verify → unpack to `<version>.tmp/` → `fsync` files and directory → rename to `<version>/` → swap `current`. Pulling the plug at any step leaves the old version running, matching the README's "pulling the power is safe".
 - **Health gate:** a new version must stay up 30 s, or call `ready` on the socket, before it counts as good; otherwise `kioskd` flips `current` back, blocks that version and kiosk-ui shows the rollback notice.
@@ -129,9 +129,11 @@ No server to run at first: a TUF repository is static files, so GitHub Pages (or
 1. Tag `weather-v1.5.0` in `pikiosk-apps`.
 2. CI builds in the **pikiosk SDK**: `image.yml` runs Buildroot's `make sdk` and attaches the SDK tarball to each pikiosk release. Its aarch64 sysroot has the glibc, libinput, libudev and Mesa GBM/EGL that kiosk-kit links against, so `cargo build --target aarch64-unknown-linux-gnu` with the SDK's linker gives one binary for all three boards. Plain `cargo zigbuild` cannot do this: it has no sysroot with those libraries.
 3. `kpkg build` assembles the package and lints the manifest (entry is executable, icon size, `boards` known).
-4. `kpkg sign` adds it to the TUF repo for the `beta` channel and signs targets and snapshot; the targets key is a GitHub Actions secret.
+4. `kpkg catalog` lists the packages as `catalog.json`, which is signed as a TUF target next to the packages; `scripts/publish.sh` runs `tuftool create` or `update` to sign targets, snapshot and timestamp for the `beta` channel. The keys are GitHub Actions secrets, raw Ed25519 PKCS#8 DER files (`tough` reads Ed25519 keys as DER, not PEM). The repository layout is `<STORE_URL>/<channel>/{metadata,targets}`. (Phase 5 change: there is no `kpkg sign`; `tuftool` does the signing.)
 5. A scheduled workflow re-signs `timestamp.json` daily so devices never see it expire.
-6. Promote to `stable` with a manual workflow run, which copies the target entry between channel repos.
+6. Promote to `stable` with a manual workflow run, which re-signs the packages of `beta` as the `stable` channel.
+
+**Phase 5 status.** Built and tested: the TUF client in `kioskd` (signature, expiry, rollback, length and hash checks, NTP gate), `kpkg catalog`, the publish scripts and workflow in `pikiosk-apps`. Not built yet: installing from the cached metadata while offline, signed packages from local media (an offline repository mirror), the `min_os` check, and the `STORE_PIN`. The `root.json` in the image is a development root until the production key ceremony.
 
 **Device config:** new whitelisted keys in `apply-config` and `kiosk.conf`: `STORE_URL=` (empty = store off, the default), `STORE_CHANNEL=stable`, `STORE_PIN=`, `STORE_PIN_LOCKOUT=300` (seconds after 3 wrong PINs), `KIOSK_HOME_GESTURE=yes`.
 
