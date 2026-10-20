@@ -1,0 +1,11 @@
+config BR2_PACKAGE_KIOSKD
+	bool "kioskd"
+	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
+	select BR2_PACKAGE_HOST_RUSTC
+	help
+	  Root daemon of the pikiosk app store. Starts apps as systemd
+	  units, hands the display between kiosk-ui and the running app,
+	  and watches for the Home gesture.
+
+comment "kioskd needs a Rust-capable architecture"
+	depends on !BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS

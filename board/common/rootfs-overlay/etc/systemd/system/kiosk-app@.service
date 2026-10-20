@@ -1,0 +1,39 @@
+[Unit]
+Description=Kiosk app %i
+# the app takes the display from kiosk-ui, and kiosk-ui takes it back
+# when the app ends, however it ends
+Conflicts=kiosk.service
+After=kiosk.service kiosk-config.service data.mount
+OnSuccess=kiosk.service
+OnFailure=kiosk.service
+# crash loop protection: after 5 failures in 2 minutes give up and show kiosk-ui
+StartLimitIntervalSec=120
+StartLimitBurst=5
+StartLimitAction=none
+
+[Service]
+User=kiosk
+Group=kiosk
+SupplementaryGroups=video render input
+EnvironmentFile=-/run/kiosk/app.env
+Environment=HOME=/data/app XDG_RUNTIME_DIR=/run/kiosk-app KIOSK_DATA=/data/app
+RuntimeDirectory=kiosk-app
+RuntimeDirectoryMode=0700
+WorkingDirectory=/data/app
+# kioskd writes a drop-in that sets the real program, arguments and permissions
+ExecStart=/bin/false
+# kiosk.service counts every start toward its own crash-loop reboot limit;
+# clearing it here keeps normal hand-backs from adding up to a reboot
+ExecStopPost=+/usr/bin/systemctl reset-failed kiosk.service
+Restart=on-failure
+RestartSec=2
+
+# the app sees only its own state, at the /data/app path kiosk apps use
+TemporaryFileSystem=/data:ro
+BindPaths=/data/store/data/%i:/data/app
+NoNewPrivileges=yes
+ProtectSystem=strict
+PrivateTmp=yes
+PrivateNetwork=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes

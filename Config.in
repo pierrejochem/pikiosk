@@ -1,1 +1,2 @@
 source "$BR2_EXTERNAL_PIKIOSK_PATH/package/kiosk-ui/Config.in"
+source "$BR2_EXTERNAL_PIKIOSK_PATH/package/kioskd/Config.in"

@@ -1,0 +1,19 @@
+[Unit]
+Description=Kiosk app launcher
+After=kiosk-config.service data.mount
+Wants=data.mount
+
+[Service]
+EnvironmentFile=-/run/kiosk/kioskd.env
+ExecStartPre=/bin/mkdir -p /data/store/apps /data/store/data
+ExecStart=/usr/sbin/kioskd daemon
+Restart=always
+RestartSec=2
+ProtectSystem=strict
+ReadWritePaths=/data/store /run/systemd/system
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectKernelModules=yes
+
+[Install]
+WantedBy=multi-user.target

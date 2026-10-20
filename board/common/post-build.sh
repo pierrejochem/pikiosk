@@ -54,6 +54,7 @@ enable_unit() { # enable <unit> <target>
 enable_unit kiosk-config.service sysinit.target
 enable_unit grow-data.service local-fs-pre.target
 enable_unit kiosk.service multi-user.target
+enable_unit kioskd.service multi-user.target
 enable_unit dropbear.service multi-user.target
 enable_unit kiosk-wifi.service multi-user.target
 enable_unit systemd-networkd.service multi-user.target
