@@ -20,6 +20,7 @@ const EV_SYN: u16 = 0x00;
 const BTN_TOUCH: u16 = 0x14a;
 const ABS_X: u16 = 0x00;
 const ABS_Y: u16 = 0x01;
+const ABS_MT_TRACKING_ID: u16 = 0x39;
 const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 
@@ -188,7 +189,7 @@ fn find_touchscreens() -> Vec<Touch> {
         } else {
             continue;
         };
-        if !has_bit(&keys, BTN_TOUCH) {
+        if !has_bit(&keys, BTN_TOUCH) && !has_bit(&abs, ABS_MT_TRACKING_ID) {
             continue;
         }
         let (mut x, mut y) = (AbsInfo::default(), AbsInfo::default());
@@ -227,6 +228,9 @@ impl Touch {
                 (EV_ABS, ABS_X | ABS_MT_POSITION_X) => self.pos.0 = self.norm(ev.value, &self.x),
                 (EV_ABS, ABS_Y | ABS_MT_POSITION_Y) => self.pos.1 = self.norm(ev.value, &self.y),
                 (EV_KEY, BTN_TOUCH) => self.touching = ev.value != 0,
+                // the Waveshare panel sends no BTN_TOUCH, only a tracking id
+                // per contact: >= 0 while a finger is down, -1 when it lifts
+                (EV_ABS, ABS_MT_TRACKING_ID) => self.touching = ev.value >= 0,
                 (EV_SYN, 0) => frame = true,
                 _ => {}
             }
@@ -240,6 +244,7 @@ pub fn watch() {
     let mut devices: Vec<Touch> = Vec::new();
     let mut hold = Hold::default();
     let mut last_scan = Instant::now() - Duration::from_secs(60);
+    let (mut was_touching, mut last_log) = (false, Instant::now());
     loop {
         // the touchscreen is USB: look again until one shows up, and after it goes away
         if devices.is_empty() && last_scan.elapsed() >= Duration::from_secs(5) {
@@ -269,7 +274,13 @@ pub fn watch() {
             }
             match d.read() {
                 Ok(true) | Ok(false) => {
-                    let corner = display_size().is_some_and(|s| in_corner(calibration(), d.pos.0, d.pos.1, s));
+                    let size = display_size();
+                    let corner = size.is_some_and(|s| in_corner(calibration(), d.pos.0, d.pos.1, s));
+                    if d.touching != was_touching || (d.touching && last_log.elapsed() > Duration::from_millis(500)) {
+                        log::debug!("touch={} raw=({:.3},{:.3}) display={size:?} corner={corner}", d.touching, d.pos.0, d.pos.1);
+                        last_log = Instant::now();
+                    }
+                    was_touching = d.touching;
                     hold.update(d.touching, corner, Instant::now());
                 }
                 Err(e) => {
