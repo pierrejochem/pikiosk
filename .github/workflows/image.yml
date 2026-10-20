@@ -41,7 +41,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            bc binutils build-essential bzip2 cpio file git libncurses-dev patch perl python3 rsync unzip wget xz-utils
+            bc binutils build-essential bzip2 cmake cpio file git libncurses-dev patch perl python3 rsync unzip wget xz-utils
 
       # source tarballs and Rust crates; the build itself is not cached
       - name: Cache downloads
