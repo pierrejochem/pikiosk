@@ -45,7 +45,7 @@ case "${1:-build}" in
 		;;
 	reconfig)
 		# build.sh only applies the defconfig when the volume has no .config;
-		# use this after editing the defconfig or board/rpi3/linux.fragment
+		# use this after editing the defconfig or board/common/linux.fragment
 		run "make BR2_EXTERNAL=/src O=/work/output pikiosk_rpi3_defconfig && make O=/work/output linux-reconfigure"
 		exec "$0" build
 		;;

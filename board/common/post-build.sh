@@ -4,7 +4,11 @@
 set -eu
 
 T="${TARGET_DIR}"
+BOARD="${2:?post-build: board name missing, set BR2_ROOTFS_POST_SCRIPT_ARGS}"
 SYSD="$T/etc/systemd/system"
+
+# ---- which board this image is for (rpi3, rpi4 or rpi5)
+echo "$BOARD" > "$T/etc/pikiosk-board"
 
 # ---- mount points --------------------------------------------------------
 mkdir -p "$T/boot" "$T/data"

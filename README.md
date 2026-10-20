@@ -4,7 +4,7 @@
 [![CI](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml/badge.svg)](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/pierrejochem/pikiosk)](LICENSE)
 
-A minimal, read-only kiosk OS for the **Raspberry Pi 3B (64-bit)**, built with Buildroot 2026.08.
+A minimal, read-only kiosk OS for the **Raspberry Pi 3B, 4 and 5 (64-bit)**, built with Buildroot 2026.08.
 It boots straight into one fullscreen native application. There is no login prompt on the screen,
 on the serial port or anywhere else, and no desktop.
 
@@ -29,7 +29,8 @@ DRM/KMS and OpenGL ES 2, without X11 or Wayland. It includes on-device touchscre
 
 Get a ready-to-flash SD card image from the
 [latest release](https://github.com/pierrejochem/pikiosk/releases/latest):
-`pikiosk-<version>-rpi3-sdcard.img.xz`. Raspberry Pi Imager flashes it directly ("Use custom").
+`pikiosk-<version>-<board>-sdcard.img.xz`, with `<board>` one of `rpi3`, `rpi4` or `rpi5`.
+Raspberry Pi Imager flashes it directly ("Use custom").
 Then edit `kiosk.conf` on the `KIOSKBOOT` partition, as described under
 [Configure](#configure-no-rebuild-needed).
 
@@ -51,12 +52,14 @@ Without Docker on a Linux machine:
 ```sh
 git clone -b 2026.08 https://gitlab.com/buildroot.org/buildroot.git
 cd buildroot
-make BR2_EXTERNAL=/path/to/pikiosk pikiosk_rpi3_defconfig
+make BR2_EXTERNAL=/path/to/pikiosk pikiosk_rpi3_defconfig   # or pikiosk_rpi4_defconfig, pikiosk_rpi5_defconfig
 make
 # -> output/images/sdcard.img
 ```
 
 ## Display: Waveshare 5inch HDMI LCD (B)
+
+On the Pi 4 and Pi 5 the panel needs a micro-HDMI adapter cable; the connector is still `HDMI-A-1`.
 
 The panel has no usable EDID, so `config.txt` forces the HDMI output on with an 800×480 CVT mode
 and `cmdline.txt` sets `video=HDMI-A-1:800x480@60e`. Touch is USB HID (built into the kernel).
@@ -69,7 +72,7 @@ and `cmdline.txt` sets `video=HDMI-A-1:800x480@60e`. Touch is USB HID (built int
 - The touch layer is resistive and single-touch. kiosk-ui accepts a tap that wobbles up to 20 px,
   because a fingertip moves that much while pressed.
 - The image ships a touch calibration for this panel
-  (`board/rpi3/rootfs-overlay/etc/udev/rules.d/99-touch-calibration.rules`). To recalibrate on the
+  (`board/common/rootfs-overlay/etc/udev/rules.d/99-touch-calibration.rules`). To recalibrate on the
   device, open **Settings → Calibrate** and tap the five crosses.
 
 ## Configure (no rebuild needed)
@@ -194,18 +197,19 @@ SD card
 ```
 
 Pulling the power is safe: the OS partitions are never written. Everything generated at boot
-(WiFi config, network files, timezone) goes to `/run`, see `board/rpi3/rootfs-overlay/usr/libexec/kiosk/apply-config`.
+(WiFi config, network files, timezone) goes to `/run`, see `board/common/rootfs-overlay/usr/libexec/kiosk/apply-config`.
 
 ## Repository
 
 ```
-configs/pikiosk_rpi3_defconfig     Buildroot configuration
+configs/pikiosk_<board>_defconfig  Buildroot configuration per board
 configs/fragments/                 optional Qt6 / SDL2 / Flutter add-ons
-board/rpi3/config.txt, cmdline.txt firmware and kernel command line
-board/rpi3/genimage.cfg.in         SD card layout
-board/rpi3/post-build.sh           disables all logins, wires ro rootfs to /run and /data
-board/rpi3/rootfs-overlay/         systemd units, network files, config scripts
-board/rpi3/boot/                   files placed on the FAT partition
+board/rpi3,rpi4,rpi5/              config.txt and cmdline.txt: firmware and kernel command line
+board/common/genimage.cfg.in       SD card layout
+board/common/post-build.sh         disables all logins, wires ro rootfs to /run and /data
+board/common/rootfs-overlay/       systemd units, network files, config scripts
+board/common/boot/                 files placed on the FAT partition
+board/common/linux.fragment        kernel options shared by all boards
 Cargo.toml                         Cargo workspace: kiosk-ui and kiosk-kit
 kiosk-kit/                         display, touch and glass widgets as a library
 kiosk-ui/                          the kiosk app (Rust, egui, liquid glass)

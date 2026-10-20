@@ -1,0 +1,27 @@
+# pikiosk - Raspberry Pi 5 firmware configuration
+kernel=Image
+arm_64bit=1
+
+# Fast, quiet boot
+disable_splash=1
+boot_delay=0
+
+# Full KMS graphics driver (needed for Mesa VC4 / GBM / EGL)
+dtoverlay=vc4-kms-v3d
+disable_overscan=1
+
+# Waveshare 5inch HDMI LCD (B) 800x480: no usable EDID, so force the output
+# on and set the mode explicitly (cmdline.txt forces it for KMS as well; the
+# panel needs a micro-HDMI adapter cable)
+hdmi_force_hotplug=1
+hdmi_group=2
+hdmi_mode=87
+hdmi_cvt=800 480 60 6 0 0 0
+max_usb_current=1
+
+# Hardware watchdog (systemd feeds it, see system.conf.d/watchdog.conf)
+dtparam=watchdog=on
+dtparam=audio=on
+
+# UART on the debug connector for kernel messages (there is no login on it)
+enable_uart=1

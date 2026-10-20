@@ -1,4 +1,6 @@
-# Builds the complete SD card image with Buildroot (1.5-2 h without caches).
+# Builds the complete SD card images with Buildroot, one job per board
+# (rpi3, rpi4, rpi5; 1.5-2 h each without caches). The rpi3 job also builds the
+# SDK for app packages (see docs/app-store.md).
 # Runs for version tags, attaching the image to that tag's release, and on
 # demand from the Actions tab, keeping the image as a workflow artifact.
 name: SD card image
@@ -13,15 +15,20 @@ permissions:
 
 concurrency:
   group: image-${{ github.ref }}
+  cancel-in-progress: false
 
 env:
   BUILDROOT_VERSION: "2026.08"
 
 jobs:
   image:
-    name: Buildroot SD card image
+    name: SD card image (${{ matrix.board }})
     runs-on: ubuntu-24.04
     timeout-minutes: 340
+    strategy:
+      fail-fast: false
+      matrix:
+        board: [rpi3, rpi4, rpi5]
     steps:
       - uses: actions/checkout@v4
 
@@ -41,39 +48,50 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/br-dl
-          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('configs/pikiosk_rpi3_defconfig', 'Cargo.lock') }}
-          restore-keys: br-dl-${{ env.BUILDROOT_VERSION }}-
+          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-${{ hashFiles('configs/pikiosk_*_defconfig', 'Cargo.lock') }}
+          restore-keys: |
+            br-dl-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-
+            br-dl-${{ env.BUILDROOT_VERSION }}-
 
       - name: Build
         run: |
           export BR2_DL_DIR="$HOME/br-dl"
           git clone --depth 1 -b "$BUILDROOT_VERSION" https://gitlab.com/buildroot.org/buildroot.git "$RUNNER_TEMP/buildroot"
           cd "$RUNNER_TEMP/buildroot"
-          make BR2_EXTERNAL="$GITHUB_WORKSPACE" O="$RUNNER_TEMP/out" pikiosk_rpi3_defconfig
+          make BR2_EXTERNAL="$GITHUB_WORKSPACE" O="$RUNNER_TEMP/out" pikiosk_${{ matrix.board }}_defconfig
           make O="$RUNNER_TEMP/out"
+          # the toolchain and sysroot app packages are built against
+          if [ "${{ matrix.board }}" = rpi3 ]; then make O="$RUNNER_TEMP/out" sdk; fi
 
       - name: Compress
         id: pack
         run: |
-          name="pikiosk-${GITHUB_REF_NAME//\//-}-rpi3-sdcard.img"
-          [ "$GITHUB_REF_TYPE" = tag ] || name="pikiosk-${GITHUB_SHA::7}-rpi3-sdcard.img"
+          ver="${GITHUB_REF_NAME//\//-}"
+          [ "$GITHUB_REF_TYPE" = tag ] || ver="${GITHUB_SHA::7}"
+          name="pikiosk-$ver-${{ matrix.board }}-sdcard.img"
           cp "$RUNNER_TEMP/out/images/sdcard.img" "$name"
           xz -T0 -9 "$name"
           sha256sum "$name.xz" > "$name.xz.sha256"
-          echo "file=$name.xz" >> "$GITHUB_OUTPUT"
+          files="$name.xz\n$name.xz.sha256"
+          if [ "${{ matrix.board }}" = rpi3 ]; then
+            sdk="pikiosk-$ver-sdk-aarch64.tar.gz"
+            cp "$RUNNER_TEMP"/out/images/*_sdk-buildroot.tar.gz "$sdk"
+            sha256sum "$sdk" > "$sdk.sha256"
+            files="$files\n$sdk\n$sdk.sha256"
+          fi
+          { echo "files<<EOF"; printf '%b\n' "$files"; echo EOF; } >> "$GITHUB_OUTPUT"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: sdcard-image
-          path: |
-            ${{ steps.pack.outputs.file }}
-            ${{ steps.pack.outputs.file }}.sha256
+          name: sdcard-image-${{ matrix.board }}
+          path: ${{ steps.pack.outputs.files }}
           retention-days: 14
 
       - name: Attach to the release
         if: github.ref_type == 'tag'
         env:
           GH_TOKEN: ${{ github.token }}
+          FILES: ${{ steps.pack.outputs.files }}
         run: |
           gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1 || gh release create "$GITHUB_REF_NAME" --title "pikiosk $GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" "${{ steps.pack.outputs.file }}" "${{ steps.pack.outputs.file }}.sha256" --clobber
+          gh release upload "$GITHUB_REF_NAME" $FILES --clobber
