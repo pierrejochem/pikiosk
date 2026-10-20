@@ -9,7 +9,7 @@ use std::time::Duration;
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{home, install, launch};
+use crate::{home, install, launch, store};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -21,6 +21,8 @@ enum Request {
     List,
     Local,
     Overview,
+    StoreRefresh,
+    StoreInstall { id: String },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -38,6 +40,7 @@ pub fn sock_path() -> PathBuf {
 
 fn handle(line: &str) -> Reply {
     let paths = install::Paths::from_env();
+    let store_cfg = store::Config::from_env(&paths.store);
     let json = |v: serde_json::Result<serde_json::Value>| v.map(Some).map_err(anyhow::Error::from);
     let result: anyhow::Result<Option<serde_json::Value>> = match serde_json::from_str::<Request>(line) {
         Ok(Request::Launch { id }) => launch::launch(&id).map(|()| None),
@@ -51,7 +54,16 @@ fn handle(line: &str) -> Reply {
             "board": paths.board,
             "apps": install::installed(&paths),
             "local": install::local(&paths),
+            "store": store::view(&store_cfg, &paths),
         }))),
+        Ok(Request::StoreRefresh) => store::refresh(&store_cfg).and_then(|_| json(Ok(store::view(&store_cfg, &paths)))),
+        Ok(Request::StoreInstall { id }) => {
+            if !kpkg::valid_id(&id) {
+                Err(anyhow::anyhow!("invalid app id"))
+            } else {
+                store::install_app(&store_cfg, &paths, &id, &launch::running_apps()).and_then(|a| json(serde_json::to_value(a)))
+            }
+        }
         Err(e) => Err(anyhow::anyhow!("bad request: {e}")),
     };
     match result {
@@ -103,12 +115,20 @@ pub fn run() -> Result<()> {
         log::info!("home gesture is off");
     }
 
+    std::thread::spawn({
+        let cfg = store::Config::from_env(&install::Paths::from_env().store);
+        move || store::sync_loop(cfg)
+    });
+
     for stream in listener.incoming() {
         match stream {
+            // a download must not block the next request (kiosk-ui asks for the overview meanwhile)
             Ok(s) => {
-                if let Err(e) = serve(s) {
-                    log::warn!("connection: {e:#}");
-                }
+                std::thread::spawn(move || {
+                    if let Err(e) = serve(s) {
+                        log::warn!("connection: {e:#}");
+                    }
+                });
             }
             Err(e) => log::warn!("accept: {e}"),
         }

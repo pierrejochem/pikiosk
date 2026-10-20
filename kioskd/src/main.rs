@@ -6,20 +6,23 @@
 //!   kioskd install <file>  install a .kpkg from an install directory
 //!   kioskd remove <id>     remove an app (its data stays)
 //!   kioskd list | local    installed apps | packages on local media
+//!   kioskd refresh         sync the signed store catalog now
+//!   kioskd get <id>        download, verify and install an app from the store
 //!
 //! Environment (all optional): KIOSKD_SOCK, KIOSKD_STORE, KIOSKD_UNIT_DIR,
-//! KIOSKD_UI_CONF, KIOSKD_ALLOW_UNSIGNED, KIOSKD_INSTALL_DIRS, KIOSKD_BOARD_FILE, KIOSKD_HOME_GESTURE (yes|no), KIOSKD_HOME_HOLD_MS,
+//! KIOSKD_UI_CONF, KIOSKD_ALLOW_UNSIGNED, KIOSKD_STORE_URL, KIOSKD_STORE_CHANNEL, KIOSKD_ROOT_JSON, KIOSKD_CLOCK_FLAG, KIOSKD_INSTALL_DIRS, KIOSKD_BOARD_FILE, KIOSKD_HOME_GESTURE (yes|no), KIOSKD_HOME_HOLD_MS,
 //! KIOSKD_DISPLAY (WxH).
 
 mod home;
 mod install;
 mod launch;
 mod server;
+mod store;
 
 use anyhow::{Result, bail};
 
 fn usage() -> ! {
-    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local");
+    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | refresh | get <id>");
     std::process::exit(2);
 }
 
@@ -34,6 +37,8 @@ fn main() -> Result<()> {
         ["remove", id] => client(&format!(r#"{{"cmd":"remove","id":{}}}"#, serde_json::to_string(id)?)),
         ["list"] => client(r#"{"cmd":"list"}"#),
         ["local"] => client(r#"{"cmd":"local"}"#),
+        ["refresh"] => client(r#"{"cmd":"store_refresh"}"#),
+        ["get", id] => client(&format!(r#"{{"cmd":"store_install","id":{}}}"#, serde_json::to_string(id)?)),
         _ => usage(),
     }
 }

@@ -7,6 +7,7 @@ license.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+futures = "0.3"
 kpkg = { path = "../kpkg" }
 anyhow = "1.0.104"
 env_logger = "0.11.11"
@@ -15,3 +16,10 @@ log = "0.4.34"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.9"
+tokio = { version = "1", features = ["rt"] }
+tough = { version = "0.24", features = ["http"] }
+url = "2"
+
+[dev-dependencies]
+aws-lc-rs = "1"
+jiff = "0.2"

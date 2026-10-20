@@ -112,7 +112,22 @@ pub fn install(p: &Paths, file: &str, running: &[String]) -> Result<AppInfo> {
     if file.extension().is_none_or(|e| e != "kpkg") || !within_install_dir(p, &file) {
         bail!("{} is not a .kpkg file in an install directory", file.display());
     }
-    let m = kpkg::read_manifest(&file)?;
+    install_package(p, &file, running, None)
+}
+
+/// Installs a package whose origin has been checked: an unsigned one from an
+/// install directory, or one the TUF client downloaded and verified (then
+/// `expected` is the catalog entry it must match).
+pub fn install_package(p: &Paths, file: &Path, running: &[String], expected: Option<&kpkg::CatalogEntry>) -> Result<AppInfo> {
+    let m = kpkg::read_manifest(file)?;
+    if let Some(e) = expected {
+        if m.id != e.id || m.version != e.version {
+            bail!("the package is {} {}, the catalog says {} {}", m.id, m.version, e.id, e.version);
+        }
+        if let Some(extra) = m.permissions.iter().find(|x| !e.permissions.contains(x)) {
+            bail!("the package asks for the permission {extra:?}, which the catalog does not list");
+        }
+    }
     if let (Some(board), false) = (&p.board, m.runs_on(p.board.as_deref().unwrap_or(""))) {
         bail!("{} does not support this board ({board})", m.name);
     }
@@ -131,7 +146,7 @@ pub fn install(p: &Paths, file: &str, running: &[String]) -> Result<AppInfo> {
     // an older copy of this version (kept as "previous") is replaced
     let _ = fs::remove_dir_all(&dest);
 
-    kpkg::unpack(&file, &tmp)?;
+    kpkg::unpack(file, &tmp)?;
     let entry = tmp.join(&m.entry);
     let ok = fs::metadata(&entry).is_ok_and(|md| {
         use std::os::unix::fs::PermissionsExt;

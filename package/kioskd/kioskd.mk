@@ -28,4 +28,11 @@ define KIOSKD_INSTALL_TARGET_CMDS
 		$(TARGET_DIR)/usr/sbin/kioskd
 endef
 
+# The trust anchor: the store only believes repositories signed by the keys
+# in this file. Changing it means a new image.
+define KIOSKD_INSTALL_ROOT_JSON
+	$(INSTALL) -D -m 0644 $(KIOSKD_PKGDIR)/root.json $(TARGET_DIR)/usr/share/kioskd/root.json
+endef
+KIOSKD_POST_INSTALL_TARGET_HOOKS += KIOSKD_INSTALL_ROOT_JSON
+
 $(eval $(cargo-package))

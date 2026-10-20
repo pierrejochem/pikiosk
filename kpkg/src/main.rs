@@ -3,13 +3,14 @@
 //!   kpkg build <dir> [-o out.kpkg]   lint <dir> and write the package
 //!   kpkg inspect <file.kpkg>         print the manifest
 //!   kpkg verify <file.kpkg>          check that the package unpacks cleanly
+//!   kpkg catalog <dir> [-o file]     list the packages in <dir> as catalog.json
 
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
 
 fn usage() -> ! {
-    eprintln!("usage: kpkg build <dir> [-o out.kpkg] | inspect <file.kpkg> | verify <file.kpkg>");
+    eprintln!("usage: kpkg build <dir> [-o out.kpkg] | inspect <file.kpkg> | verify <file.kpkg> | catalog <dir> [-o catalog.json]");
     std::process::exit(2);
 }
 
@@ -34,8 +35,20 @@ fn main() -> Result<()> {
             println!("{file}: ok ({} {})", m.id, m.version);
             Ok(())
         }
+        ["catalog", dir] => catalog(Path::new(dir), None),
+        ["catalog", dir, "-o", out] => catalog(Path::new(dir), Some(Path::new(out))),
         _ => usage(),
     }
+}
+
+/// The publisher signs this file as the TUF target `catalog.json`.
+fn catalog(dir: &Path, out: Option<&Path>) -> Result<()> {
+    let json = serde_json::to_string_pretty(&kpkg::Catalog::from_dir(dir)?)?;
+    match out {
+        Some(p) => std::fs::write(p, json + "\n")?,
+        None => println!("{json}"),
+    }
+    Ok(())
 }
 
 fn build(dir: &Path, out: Option<PathBuf>) -> Result<()> {

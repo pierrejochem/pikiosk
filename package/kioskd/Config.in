@@ -2,6 +2,7 @@ config BR2_PACKAGE_KIOSKD
 	bool "kioskd"
 	depends on BR2_PACKAGE_HOST_RUSTC_TARGET_ARCH_SUPPORTS
 	select BR2_PACKAGE_HOST_RUSTC
+	select BR2_PACKAGE_CA_CERTIFICATES  # HTTPS to the store
 	help
 	  Root daemon of the pikiosk app store. Starts apps as systemd
 	  units, hands the display between kiosk-ui and the running app,

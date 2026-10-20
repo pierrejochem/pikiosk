@@ -8,7 +8,7 @@ use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
 use anyhow::{Context, Result, bail};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 pub const BOARDS: [&str; 3] = ["rpi3", "rpi4", "rpi5"];
 pub const PERMISSIONS: [&str; 4] = ["network", "audio", "gpio", "serial"];
@@ -25,6 +25,9 @@ pub struct Manifest {
     pub entry: String,
     #[serde(default)]
     pub icon: Option<String>,
+    /// where the store files the app, e.g. "Weather"; default "Other"
+    #[serde(default)]
+    pub category: Option<String>,
     #[serde(default)]
     pub min_os: Option<String>,
     /// empty = every board
@@ -88,6 +91,11 @@ impl Manifest {
         {
             bail!("icon {i:?} must be a relative path inside the package");
         }
+        if let Some(c) = &self.category
+            && (c.trim().is_empty() || c.chars().count() > 24 || c.chars().any(|c| c.is_control()))
+        {
+            bail!("category must be 1-24 characters");
+        }
         if let Some(v) = &self.min_os
             && parse_version(v).is_none()
         {
@@ -116,6 +124,66 @@ impl Manifest {
 
     pub fn runs_on(&self, board: &str) -> bool {
         self.boards.is_empty() || self.boards.iter().any(|b| b == board)
+    }
+}
+
+/// One app in the store's catalog, as the publisher lists it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct CatalogEntry {
+    pub id: String,
+    pub name: String,
+    pub version: String,
+    pub category: String,
+    /// the package's target name in the TUF repository
+    pub file: String,
+    pub size: u64,
+    pub permissions: Vec<String>,
+    pub boards: Vec<String>,
+}
+
+/// The catalog the publisher signs as the TUF target `catalog.json`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct Catalog {
+    pub v: u32,
+    pub apps: Vec<CatalogEntry>,
+}
+
+impl Catalog {
+    /// Lists every `.kpkg` in `dir`, by name then version.
+    pub fn from_dir(dir: &Path) -> Result<Catalog> {
+        let mut apps = Vec::new();
+        for e in fs::read_dir(dir).with_context(|| format!("reading {}", dir.display()))? {
+            let path = e?.path();
+            if path.extension().is_none_or(|x| x != "kpkg") {
+                continue;
+            }
+            let m = read_manifest(&path).with_context(|| path.display().to_string())?;
+            apps.push(CatalogEntry {
+                category: m.category.clone().unwrap_or_else(|| "Other".into()),
+                file: path.file_name().and_then(|n| n.to_str()).context("file name")?.to_string(),
+                size: fs::metadata(&path)?.len(),
+                id: m.id,
+                name: m.name,
+                version: m.version,
+                permissions: m.permissions,
+                boards: m.boards,
+            });
+        }
+        apps.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then(parse_version(&a.version).cmp(&parse_version(&b.version))));
+        Ok(Catalog { v: 1, apps })
+    }
+
+    /// The newest version of each app that runs on `board`.
+    pub fn newest_for(&self, board: Option<&str>) -> Vec<&CatalogEntry> {
+        let mut out: Vec<&CatalogEntry> = Vec::new();
+        for e in self.apps.iter().filter(|e| board.is_none_or(|b| e.boards.is_empty() || e.boards.iter().any(|x| x == b))) {
+            match out.iter_mut().find(|o| o.id == e.id) {
+                Some(o) if parse_version(&e.version) > parse_version(&o.version) => *o = e,
+                Some(_) => {}
+                None => out.push(e),
+            }
+        }
+        out
     }
 }
 
@@ -325,6 +393,28 @@ mod tests {
         let again = root.join("w2.kpkg");
         pack(&d, &again).unwrap();
         assert_eq!(fs::read(&out).unwrap(), fs::read(&again).unwrap(), "packing is deterministic");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn catalog_lists_the_newest_version_for_a_board() {
+        let root = tmp("catalog");
+        let d = app_dir(&root, "");
+        fs::create_dir_all(root.join("repo")).unwrap();
+        pack(&d, &root.join("repo/weather-1.5.0.kpkg")).unwrap();
+        let t = fs::read_to_string(d.join("manifest.toml")).unwrap();
+        fs::write(d.join("manifest.toml"), t.replace("1.5.0", "1.10.0").replace("[", "[") + "category='Weather'\n").unwrap();
+        pack(&d, &root.join("repo/weather-1.10.0.kpkg")).unwrap();
+        fs::write(root.join("repo/notes.txt"), "ignored").unwrap();
+
+        let c = Catalog::from_dir(&root.join("repo")).unwrap();
+        assert_eq!(c.apps.len(), 2);
+        assert_eq!(c.apps[0].category, "Other");
+        assert_eq!(c.apps[1].category, "Weather");
+        let newest = c.newest_for(Some("rpi3"));
+        assert_eq!(newest.len(), 1);
+        assert_eq!(newest[0].version, "1.10.0", "1.10.0 is newer than 1.5.0");
+        assert!(c.newest_for(Some("rpi4")).is_empty(), "the app is for rpi3 and rpi5 only");
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -66,6 +66,7 @@ BR2_PACKAGE_HOST_RUSTC=y
 BR2_PACKAGE_HOST_RUST_BIN=y
 BR2_PACKAGE_KIOSK_UI=y
 BR2_PACKAGE_KIOSKD=y
+BR2_PACKAGE_CA_CERTIFICATES=y
 
 # --- Networking: systemd-networkd/resolved/timesyncd + WiFi -----------------
 BR2_PACKAGE_SYSTEMD_NETWORKD=y
