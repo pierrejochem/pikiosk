@@ -1,0 +1,11 @@
+[Unit]
+Description=Create the app store directories
+# kioskd.service sandboxes /data read-only except /data/store, and systemd
+# refuses to start a sandbox whose writable path does not exist yet
+RequiresMountsFor=/data
+Before=kioskd.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/mkdir -p /data/store/apps /data/store/data
