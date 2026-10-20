@@ -275,7 +275,7 @@ impl KioskApp {
             let sc = Sc { gs: &glass, u: l.wu, alpha, enabled: i == self.page };
             match i {
                 0 => self.home(ui, &l, sc, area, &info),
-                APPS_PAGE => self.store.ui(ui, &l, sc, area, bar_top),
+                APPS_PAGE => self.store.ui(ui, &l, sc, area, bar_top, time),
                 2 => self.network(ui, &l, sc, area, &info),
                 3 => self.controls(ui, &l, sc, area),
                 _ => self.settings_page(ui, &l, sc, area, time),

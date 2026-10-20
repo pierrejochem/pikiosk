@@ -265,32 +265,54 @@ mod tests {
         assert_eq!(app.touch_request.take(), Some(TouchRequest::Default));
     }
 
-    /// A kioskd stand-in on a temporary socket: serves a fixed overview and
-    /// records the other requests it gets.
-    fn fake_kioskd(dir: &std::path::Path, local: bool) -> (std::path::PathBuf, std::sync::mpsc::Receiver<String>) {
+    /// A kioskd stand-in on a temporary socket: a fixed overview (two installed apps,
+    /// one catalog app, a rollback notice until it is acknowledged), the PIN 1234, and a
+    /// log of every request that changes something.
+    fn fake_kioskd(dir: &std::path::Path) -> (std::path::PathBuf, std::sync::mpsc::Receiver<serde_json::Value>) {
         use std::io::{BufRead, BufReader, Write};
         let sock = dir.join("kioskd.sock");
         let _ = std::fs::remove_file(&sock);
         let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
         let (tx, rx) = std::sync::mpsc::channel();
+        let acked = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         std::thread::spawn(move || {
             for s in listener.incoming().flatten() {
-                let mut line = String::new();
-                BufReader::new(&s).read_line(&mut line).unwrap();
-                let reply = if line.contains("overview") {
-                    let local = if local {
-                        r#"[{"file":"/boot/apps/clock.kpkg","id":"de.t.clock","name":"Clock","version":"2.0.0","installed":null}]"#
-                    } else {
-                        "[]"
+                let (tx, acked) = (tx.clone(), acked.clone());
+                std::thread::spawn(move || {
+                    let mut line = String::new();
+                    BufReader::new(&s).read_line(&mut line).unwrap();
+                    let req: serde_json::Value = serde_json::from_str(&line).unwrap();
+                    let reply = match req["cmd"].as_str().unwrap() {
+                        "overview" => {
+                            let notices = if acked.load(std::sync::atomic::Ordering::SeqCst) {
+                                "[]"
+                            } else {
+                                r#"[{"id":"de.t.weather","name":"Weather","from":"1.5.0","to":"1.4.2","reason":"closed during its 30 s health check"}]"#
+                            };
+                            format!(
+                                r#"{{"ok":true,"data":{{"allow_unsigned":false,"board":"rpi3","local":[],"notices":{notices},"admin":{{"pin_set":true,"locked_for":0,"tries_left":3,"lockout":300}},"store":{{"enabled":true,"channel":"stable","synced_at":1792520000,"apps":[{{"id":"de.t.clock","name":"Clock","version":"1.0.0","category":"Info","size":1887436,"permissions":[],"installed":null,"update":false,"boards":[]}}]}},"apps":[{{"id":"de.t.weather","name":"Weather","version":"1.4.2","icon":null,"previous":null}},{{"id":"de.t.radio","name":"Web radio","version":"1.2.0","icon":null,"previous":null}}]}}}}"#
+                            )
+                        }
+                        "unlock" => {
+                            tx.send(req.clone()).unwrap();
+                            if req["pin"] == "1234" {
+                                r#"{"ok":true,"data":{"token":"abc123","ttl":60}}"#.to_string()
+                            } else {
+                                r#"{"ok":false,"error":"wrong PIN","data":{"tries_left":2}}"#.to_string()
+                            }
+                        }
+                        "store_install" if req["token"] != "abc123" => r#"{"ok":false,"error":"the admin PIN is needed"}"#.to_string(),
+                        "progress" => r#"{"ok":true,"data":{"active":false,"phase":"","done":0,"total":0}}"#.to_string(),
+                        cmd => {
+                            if cmd == "ack_notice" {
+                                acked.store(true, std::sync::atomic::Ordering::SeqCst);
+                            }
+                            tx.send(req.clone()).unwrap();
+                            r#"{"ok":true}"#.to_string()
+                        }
                     };
-                    format!(
-                        r#"{{"ok":true,"data":{{"allow_unsigned":true,"board":"rpi3","local":{local},"apps":[{{"id":"de.t.weather","name":"Weather","version":"1.4.2","icon":null}},{{"id":"de.t.radio","name":"Web radio","version":"1.2.0","icon":null}}]}}}}"#
-                    )
-                } else {
-                    tx.send(line.trim().to_string()).unwrap();
-                    r#"{"ok":true}"#.to_string()
-                };
-                writeln!(&s, "{reply}").unwrap();
+                    writeln!(&s, "{reply}").unwrap();
+                });
             }
         });
         (sock, rx)
@@ -304,26 +326,35 @@ mod tests {
         }
     }
 
-    /// Apps tab -> the installed apps appear -> tapping a tile asks kioskd to
-    /// launch it; the local packages tile installs a package. 800x480 and 1280x720.
+    /// Apps tab -> the rollback notice -> tile launches -> Store tile -> wrong PIN, right PIN
+    /// -> catalog -> Install carries the admin token. 800x480 and 1280x720.
     #[test]
-    fn apps_page_launches_and_installs() {
+    fn apps_page_pin_catalog_and_install() {
         unsafe { std::env::remove_var("KIOSK_DATA") };
         let dir = std::env::temp_dir().join(format!("kiosk-apps-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
-        let (sock, requests) = fake_kioskd(&dir, true);
-        unsafe { std::env::set_var("KIOSKD_SOCK", &sock) };
-
         for size in [[800u32, 480], [1280, 720]] {
+            // a fresh kioskd per round: the notice stays until it is acknowledged
+            let (sock, requests) = fake_kioskd(&dir);
+            unsafe { std::env::set_var("KIOSKD_SOCK", &sock) };
+            let next = |what: &str| requests.recv_timeout(std::time::Duration::from_secs(5)).unwrap_or_else(|_| panic!("no {what} request"));
             let mut off = Offscreen::new(size).expect("EGL surfaceless context (needs Mesa)");
             let mut app = KioskApp::new();
             let mut t = 1.0;
             settle(&mut off, &mut app, &mut t, 3);
             let (w, h) = (size[0] as f32, size[1] as f32);
-            let l = kiosk_kit::Lay::new(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h)));
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
+            let l = kiosk_kit::Lay::new(screen);
+            let (s, x0) = (l.v(1.5, 1.0), w * 0.5 - 400.0 * l.v(1.5, 1.0));
+            let d = |x: f32, y: f32| pos2(x0 + x * s, y * s);
+            let tap = |off: &mut Offscreen, app: &mut KioskApp, t: &mut f64, p: egui::Pos2| {
+                click(off, app, t, p, p);
+                settle(off, app, t, 12);
+            };
 
             // second tab of the five
             let bar_w = l.v(600.0, 500.0);
+            let bar_top = h - l.v(70.0, 60.0) - l.v(24.0, 10.0);
             let tab = pos2(w * 0.5 - bar_w * 0.5 + 6.0 + (bar_w - 12.0) / 5.0 * 1.5, h - l.v(24.0, 10.0) - l.v(70.0, 60.0) * 0.5);
             click(&mut off, &mut app, &mut t, tab, tab);
             assert_eq!(app.page, crate::app::APPS_PAGE);
@@ -335,28 +366,59 @@ mod tests {
             }
             settle(&mut off, &mut app, &mut t, 40);
             assert_eq!(app.store.apps.len(), 2, "the installed apps should be listed ({size:?})");
-            assert_eq!(app.store.reachable, Some(true));
+            assert_eq!(app.store.notices.len(), 1, "the rollback notice is shown");
 
-            // tap the second tile (Web radio)
-            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
-            let bar_top = h - l.v(70.0, 60.0) - l.v(24.0, 10.0);
+            // the notice blocks the page until OK; OK tells kioskd
+            tap(&mut off, &mut app, &mut t, d(632.0 - 120.0 + 50.0, 342.0));
+            assert_eq!(next("ack_notice")["cmd"], "ack_notice");
+            assert!(app.store.notices.is_empty());
+
+            // a tile launches its app
             let c = app.store.tile_center(&l, screen, bar_top, 1);
-            click(&mut off, &mut app, &mut t, c, c);
-            let got = requests.recv_timeout(std::time::Duration::from_secs(5)).expect("a launch request");
-            assert!(got.contains(r#""cmd":"launch""#) && got.contains("de.t.weather") == false && got.contains("de.t.radio"), "{got}");
+            tap(&mut off, &mut app, &mut t, c);
+            let got = next("launch");
+            assert!(got["cmd"] == "launch" && got["id"] == "de.t.radio", "{got}");
 
-            // the dashed tile opens the local packages; Install sends the path
+            // the Store tile asks for the PIN; the keypad types digits
             settle(&mut off, &mut app, &mut t, 20);
             let c = app.store.tile_center(&l, screen, bar_top, 2);
-            click(&mut off, &mut app, &mut t, c, c);
+            tap(&mut off, &mut app, &mut t, c);
+            assert!(app.store.pin.is_some(), "the PIN dialog should open");
+            let key = |k: char| {
+                let i = "123456789<0>".find(k).unwrap();
+                d(420.0 + (i % 3) as f32 * (232.0 / 3.0 + 10.0) + 232.0 / 6.0, 113.0 + (i / 3) as f32 * 66.0 + 28.0)
+            };
+            for k in "0000>".chars() {
+                tap(&mut off, &mut app, &mut t, key(k));
+            }
+            assert_eq!(next("unlock")["pin"], "0000");
+            for _ in 0..100 {
+                settle(&mut off, &mut app, &mut t, 1);
+                if app.store.pin.as_ref().is_some_and(|p| p.wrong.is_some()) {
+                    break;
+                }
+            }
+            assert_eq!(app.store.pin.as_ref().and_then(|p| p.wrong), Some(2), "a wrong PIN reports the tries left");
+            assert!(!app.store.is_admin());
+
+            for k in "1234>".chars() {
+                tap(&mut off, &mut app, &mut t, key(k));
+            }
+            assert_eq!(next("unlock")["pin"], "1234");
+            for _ in 0..100 {
+                settle(&mut off, &mut app, &mut t, 1);
+                if app.store.is_admin() {
+                    break;
+                }
+            }
+            assert!(app.store.is_admin(), "the right PIN opens the admin session");
+            assert_eq!(app.store.view, crate::store::View::Catalog);
+
+            // the catalog's first card: Install sends the token
             settle(&mut off, &mut app, &mut t, 20);
-            let hy = l.v(104.0, 62.0);
-            let _ = hy;
-            let row = pos2(w * 0.5, l.v(150.0, 92.0) + l.v(92.0, 66.0) * 0.5);
-            let install = pos2(row.x + l.v(1100.0, 760.0).min(w - 2.0 * l.v(80.0, 24.0)) * 0.5 - l.v(24.0, 18.0) - l.v(140.0, 108.0) * 0.5, row.y);
-            click(&mut off, &mut app, &mut t, install, install);
-            let got = requests.recv_timeout(std::time::Duration::from_secs(5)).expect("an install request");
-            assert!(got.contains(r#""cmd":"install""#) && got.contains("/boot/apps/clock.kpkg"), "{got}");
+            tap(&mut off, &mut app, &mut t, d(24.0 + 370.0 - 16.0 - 52.0, 162.0 + 56.0));
+            let got = next("store_install");
+            assert!(got["cmd"] == "store_install" && got["id"] == "de.t.clock" && got["token"] == "abc123", "{got}");
         }
         unsafe { std::env::remove_var("KIOSKD_SOCK") };
         std::fs::remove_dir_all(&dir).ok();

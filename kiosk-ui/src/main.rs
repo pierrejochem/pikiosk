@@ -9,6 +9,7 @@
 
 mod app;
 mod backlight;
+mod catalog;
 mod store;
 mod sysinfo;
 

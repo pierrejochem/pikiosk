@@ -66,6 +66,12 @@ pub enum Icon {
     Gear,
     Apps,
     Lock,
+    Back,
+    Check,
+    Backspace,
+    Refresh,
+    Shield,
+    Undo,
 }
 
 pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
@@ -135,6 +141,29 @@ pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
             for (x, y) in [(3.5, 3.5), (13.5, 3.5), (3.5, 13.5), (13.5, 13.5)] {
                 p.rect_stroke(Rect::from_min_max(at(x, y), at(x + 7.0, y + 7.0)), CornerRadius::same((1.5 * s) as u8), st, egui::StrokeKind::Middle);
             }
+        }
+        Icon::Back => {
+            p.add(Shape::line(vec![at(15.0, 5.5), at(8.5, 12.0), at(15.0, 18.5)], st));
+        }
+        Icon::Check => {
+            p.add(Shape::line(vec![at(5.0, 12.5), at(10.0, 17.5), at(19.5, 7.0)], Stroke::new(w * 1.25, color)));
+        }
+        Icon::Backspace => {
+            p.add(Shape::closed_line(vec![at(21.0, 5.0), at(9.0, 5.0), at(3.0, 12.0), at(9.0, 19.0), at(21.0, 19.0)], st));
+            p.line_segment([at(11.5, 9.5), at(16.5, 14.5)], st);
+            p.line_segment([at(16.5, 9.5), at(11.5, 14.5)], st);
+        }
+        Icon::Refresh => {
+            p.add(Shape::line(arc(12.0, 12.0, 8.0, -PI * 0.15, PI * 1.45), st));
+            p.add(Shape::line(vec![at(18.5, 3.5), at(20.0, 9.0), at(14.5, 9.5)], st));
+        }
+        Icon::Shield => {
+            p.add(Shape::closed_line(vec![at(12.0, 3.0), at(20.0, 6.0), at(20.0, 12.0), at(12.0, 21.0), at(4.0, 12.0), at(4.0, 6.0)], st));
+            p.add(Shape::line(vec![at(9.0, 12.0), at(11.0, 14.0), at(15.0, 10.0)], st));
+        }
+        Icon::Undo => {
+            p.add(Shape::line(arc(12.0, 12.0, 8.5, PI * 1.0, PI * 2.6), st));
+            p.add(Shape::line(vec![at(3.0, 4.0), at(3.5, 9.5), at(9.0, 9.0)], st));
         }
         Icon::Lock => {
             p.rect_stroke(Rect::from_min_max(at(5.0, 11.0), at(19.0, 21.0)), CornerRadius::same((2.0 * s) as u8), st, egui::StrokeKind::Middle);
