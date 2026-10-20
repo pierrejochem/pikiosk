@@ -20,6 +20,7 @@ use tough::{IntoVec, Repository, RepositoryLoader, TargetName};
 use url::Url;
 
 use crate::install::{self, AppInfo, Paths};
+use crate::{progress, state};
 
 /// One TUF operation at a time: the datastore is not shared between them.
 static BUSY: Mutex<()> = Mutex::new(());
@@ -134,6 +135,12 @@ async fn read_catalog(repo: &Repository) -> Result<Catalog> {
     Ok(cat)
 }
 
+/// The catalog without the versions that failed their health check on this kiosk.
+fn without_blocked(cat: &Catalog, store: &Path) -> Catalog {
+    let blocked = state::read(store).blocked;
+    Catalog { v: cat.v, apps: cat.apps.iter().filter(|e| !blocked.get(&e.id).is_some_and(|b| b.contains(&e.version))).cloned().collect() }
+}
+
 /// A package file name from the catalog: plain, no directories.
 fn valid_file_name(f: &str) -> bool {
     f.ends_with(".kpkg") && !f.starts_with('.') && f.bytes().all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-' | b'_'))
@@ -156,8 +163,12 @@ async fn download(cfg: &Config, repo: &Repository, entry: &CatalogEntry) -> Resu
     let mut stream = Box::pin(repo.read_target(&name).await?.context("the package is not in the repository")?);
     let result: Result<()> = async {
         let mut f = std::fs::File::create(&part)?;
+        let mut done = 0u64;
         while let Some(chunk) = stream.next().await {
-            f.write_all(&chunk.context("the download did not verify")?)?;
+            let chunk = chunk.context("the download did not verify")?;
+            f.write_all(&chunk)?;
+            done += chunk.len() as u64;
+            progress::update("download", done, len);
         }
         f.sync_all()?;
         Ok(())
@@ -187,10 +198,12 @@ pub fn refresh(cfg: &Config) -> Result<Catalog> {
 pub fn install_app(cfg: &Config, paths: &Paths, id: &str, running: &[String]) -> Result<AppInfo> {
     let _busy = BUSY.lock().unwrap_or_else(|e| e.into_inner());
     cfg.require_clock()?;
+    let _job = progress::Job::start(id);
     let (entry, file) = block_on(async {
         let repo = cfg.load().await?;
         let cat = read_catalog(&repo).await?;
-        let entry = cat.newest_for(paths.board.as_deref()).into_iter().find(|e| e.id == id).cloned().with_context(|| format!("{id} is not in the catalog for this board"))?;
+        let visible = without_blocked(&cat, &paths.store);
+        let entry = visible.newest_for(paths.board.as_deref()).into_iter().find(|e| e.id == id).cloned().with_context(|| format!("{id} is not in the catalog for this board"))?;
         let file = download(cfg, &repo, &entry).await?;
         let _ = cfg.save_catalog(&cat);
         anyhow::Ok((entry, file))
@@ -204,13 +217,14 @@ pub fn install_app(cfg: &Config, paths: &Paths, id: &str, running: &[String]) ->
 pub fn view(cfg: &Config, paths: &Paths) -> serde_json::Value {
     let installed = install::installed(paths);
     let (cat, synced_at) = cfg.cached().map(|(c, a)| (Some(c), Some(a))).unwrap_or((None, None));
+    let cat = cat.map(|c| without_blocked(&c, &paths.store));
     let apps: Vec<_> = cat
         .iter()
         .flat_map(|c| c.newest_for(paths.board.as_deref()))
         .map(|e| {
             let have = installed.iter().find(|i| i.id == e.id).map(|i| i.version.clone());
             let update = have.as_ref().is_some_and(|h| kpkg::parse_version(h) < kpkg::parse_version(&e.version));
-            json!({ "id": e.id, "name": e.name, "version": e.version, "category": e.category, "size": e.size, "permissions": e.permissions, "installed": have, "update": update })
+            json!({ "id": e.id, "name": e.name, "version": e.version, "category": e.category, "size": e.size, "permissions": e.permissions, "installed": have, "update": update, "boards": e.boards })
         })
         .collect();
     json!({ "enabled": cfg.enabled(), "channel": cfg.channel, "synced_at": synced_at, "apps": apps })

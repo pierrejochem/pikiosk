@@ -139,6 +139,7 @@ pub fn launch(id: &str) -> Result<()> {
     let _ = systemctl(&["reset-failed", &unit]);
     systemctl_ok(&["start", &unit])?;
     log::info!("launched {id}");
+    crate::health::watch_if_pending(id);
     Ok(())
 }
 

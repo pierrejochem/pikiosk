@@ -146,7 +146,8 @@ pub fn install_package(p: &Paths, file: &Path, running: &[String], expected: Opt
     // an older copy of this version (kept as "previous") is replaced
     let _ = fs::remove_dir_all(&dest);
 
-    kpkg::unpack(file, &tmp)?;
+    crate::progress::update("install", 0, 1);
+    kpkg::unpack_with_progress(file, &tmp, &mut |done, total| crate::progress::update("install", done, total))?;
     let entry = tmp.join(&m.entry);
     let ok = fs::metadata(&entry).is_ok_and(|md| {
         use std::os::unix::fs::PermissionsExt;
@@ -165,6 +166,22 @@ pub fn install_package(p: &Paths, file: &Path, running: &[String], expected: Opt
     }
     sync_dir(&app)?;
     sync_dir(&p.apps())?;
+
+    // the new version must pass its health check the first time it runs
+    let previous = old.clone();
+    crate::state::update(&p.store, |s| {
+        if let Some(b) = s.blocked.get_mut(&m.id) {
+            b.retain(|v| *v != m.version);
+        }
+        match &previous {
+            Some(prev) => {
+                s.pending.insert(m.id.clone(), crate::state::Pending { version: m.version.clone(), previous: prev.clone() });
+            }
+            None => {
+                s.pending.remove(&m.id);
+            }
+        }
+    })?;
 
     // keep the new version and the one before it
     let keep = [Some(m.version.clone()), old, Some("current".into()), Some("previous".into())];
@@ -195,8 +212,48 @@ pub fn remove(p: &Paths, id: &str, running: &[String]) -> Result<()> {
     sync_dir(&p.apps())?;
     fs::remove_dir_all(&gone)?;
     // the app's own data stays, so a reinstall finds its settings again
+    crate::state::update(&p.store, |s| {
+        s.pending.remove(id);
+        s.blocked.remove(id);
+        s.notices.retain(|n| n.id != id);
+    })?;
     log::info!("removed {id}");
     Ok(())
+}
+
+pub fn current_version(p: &Paths, id: &str) -> Option<String> {
+    link_target(&p.apps().join(id).join("current"))
+}
+
+/// Switches `current` back to the previous version. With `discard` the version
+/// being left is deleted (a failed update); otherwise it becomes the previous one,
+/// so the admin can go forward again. Returns (from, to).
+pub fn rollback(p: &Paths, id: &str, running: &[String], discard: bool) -> Result<(String, String)> {
+    if !kpkg::valid_id(id) {
+        bail!("invalid app id");
+    }
+    if running.iter().any(|r| r == id) {
+        bail!("{id} is running");
+    }
+    let app = p.apps().join(id);
+    let cur = link_target(&app.join("current")).with_context(|| format!("{id} is not installed"))?;
+    let prev = link_target(&app.join("previous")).with_context(|| format!("{id} has no previous version"))?;
+    if !app.join(&prev).join("manifest.toml").is_file() {
+        bail!("the previous version {prev} is gone");
+    }
+    swap_link(&app.join("current"), &prev)?;
+    if discard {
+        let _ = fs::remove_file(app.join("previous"));
+        let _ = fs::remove_dir_all(app.join(&cur));
+    } else {
+        swap_link(&app.join("previous"), &cur)?;
+    }
+    sync_dir(&app)?;
+    crate::state::update(&p.store, |s| {
+        s.pending.remove(id);
+    })?;
+    log::info!("rolled {id} back from {cur} to {prev}");
+    Ok((cur, prev))
 }
 
 pub fn app_info(p: &Paths, id: &str) -> Option<AppInfo> {
@@ -368,5 +425,59 @@ mod tests {
         assert!(e.p.store.join("data/b.app").exists(), "app data survives removal");
         assert!(remove(&e.p, "b.app", &[]).is_err());
         assert!(remove(&e.p, "../x", &[]).is_err());
+    }
+
+    #[test]
+    fn an_update_stays_pending_until_it_passes_the_health_gate() {
+        use crate::health::{Verdict, conclude};
+        let e = Env::new("gate-good");
+        install(&e.p, &e.package("t.app", "1.0.0", ""), &[]).unwrap();
+        assert!(crate::state::read(&e.p.store).pending.is_empty(), "a first install has nothing to go back to");
+        install(&e.p, &e.package("t.app", "2.0.0", ""), &[]).unwrap();
+        let pending = crate::state::read(&e.p.store).pending;
+        assert_eq!((pending["t.app"].version.as_str(), pending["t.app"].previous.as_str()), ("2.0.0", "1.0.0"));
+
+        conclude(&e.p, "t.app", "2.0.0", Verdict::Inconclusive).unwrap();
+        assert!(crate::state::read(&e.p.store).pending.contains_key("t.app"), "closed early: still pending");
+        conclude(&e.p, "t.app", "2.0.0", Verdict::Good).unwrap();
+        assert!(crate::state::read(&e.p.store).pending.is_empty());
+        assert_eq!(e.current("t.app").as_deref(), Some("2.0.0"));
+    }
+
+    #[test]
+    fn a_failed_health_gate_rolls_back_blocks_the_version_and_leaves_a_notice() {
+        use crate::health::{Verdict, conclude};
+        // conclude() stops the app and asks for kiosk-ui: not on the machine running the tests
+        unsafe { std::env::set_var("KIOSKD_SYSTEMCTL", "true") };
+        let e = Env::new("gate-bad");
+        install(&e.p, &e.package("t.app", "1.0.0", ""), &[]).unwrap();
+        install(&e.p, &e.package("t.app", "2.0.0", ""), &[]).unwrap();
+
+        conclude(&e.p, "t.app", "2.0.0", Verdict::Failed).unwrap();
+        assert_eq!(e.current("t.app").as_deref(), Some("1.0.0"), "back on the version that worked");
+        assert!(!e.p.apps().join("t.app/2.0.0").exists() && !e.p.apps().join("t.app/previous").exists());
+        assert_eq!(installed(&e.p)[0].version, "1.0.0", "and it is launchable");
+        let s = crate::state::read(&e.p.store);
+        assert!(s.pending.is_empty());
+        assert_eq!(s.blocked["t.app"], ["2.0.0"]);
+        assert_eq!((s.notices[0].from.as_str(), s.notices[0].to.as_str()), ("2.0.0", "1.0.0"));
+        assert!(s.notices[0].reason.contains("health check"));
+
+        // installing it again on purpose lifts the block
+        install(&e.p, &e.package("t.app", "2.0.0", ""), &[]).unwrap();
+        assert!(crate::state::read(&e.p.store).blocked["t.app"].is_empty());
+    }
+
+    #[test]
+    fn manual_rollback_swaps_and_can_go_forward_again() {
+        let e = Env::new("rollback");
+        install(&e.p, &e.package("t.app", "1.0.0", ""), &[]).unwrap();
+        assert!(rollback(&e.p, "t.app", &[], false).unwrap_err().to_string().contains("no previous"));
+        install(&e.p, &e.package("t.app", "2.0.0", ""), &[]).unwrap();
+        assert_eq!(rollback(&e.p, "t.app", &["t.app".into()], false).unwrap_err().to_string(), "t.app is running");
+        assert_eq!(rollback(&e.p, "t.app", &[], false).unwrap(), ("2.0.0".into(), "1.0.0".into()));
+        assert_eq!(e.current("t.app").as_deref(), Some("1.0.0"));
+        assert_eq!(rollback(&e.p, "t.app", &[], false).unwrap(), ("1.0.0".into(), "2.0.0".into()), "and forward again");
+        assert!(crate::state::read(&e.p.store).pending.is_empty());
     }
 }

@@ -267,10 +267,31 @@ pub fn pack(dir: &Path, out: &Path) -> Result<Manifest> {
     Ok(m)
 }
 
+/// Counts the compressed bytes read, to report unpack progress.
+struct Counting<R> {
+    inner: R,
+    count: std::sync::Arc<std::sync::atomic::AtomicU64>,
+}
+
+impl<R: Read> Read for Counting<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let n = self.inner.read(buf)?;
+        self.count.fetch_add(n as u64, std::sync::atomic::Ordering::Relaxed);
+        Ok(n)
+    }
+}
+
 fn open(package: &Path) -> Result<tar::Archive<impl Read>> {
-    let dec = zstd::Decoder::new(File::open(package).with_context(|| format!("opening {}", package.display()))?)?;
+    Ok(open_counted(package)?.0)
+}
+
+fn open_counted(package: &Path) -> Result<(tar::Archive<impl Read>, std::sync::Arc<std::sync::atomic::AtomicU64>, u64)> {
+    let file = File::open(package).with_context(|| format!("opening {}", package.display()))?;
+    let len = file.metadata()?.len();
+    let count = std::sync::Arc::new(std::sync::atomic::AtomicU64::new(0));
+    let dec = zstd::Decoder::new(Counting { inner: file, count: count.clone() })?;
     // a small archive must not unpack to an unbounded stream
-    Ok(tar::Archive::new(dec.take(MAX_UNPACKED + (8 << 20))))
+    Ok((tar::Archive::new(dec.take(MAX_UNPACKED + (8 << 20))), count, len))
 }
 
 /// Reads and validates the manifest without unpacking the rest.
@@ -289,11 +310,18 @@ pub fn read_manifest(package: &Path) -> Result<Manifest> {
 /// Unpacks into `dest` (which must not exist), flushing every file to disk.
 /// Only regular files and directories are accepted, and none may leave `dest`.
 pub fn unpack(package: &Path, dest: &Path) -> Result<Manifest> {
+    unpack_with_progress(package, dest, &mut |_, _| {})
+}
+
+/// Like [`unpack`]; `progress(done, total)` counts compressed bytes of the package.
+pub fn unpack_with_progress(package: &Path, dest: &Path, progress: &mut dyn FnMut(u64, u64)) -> Result<Manifest> {
     let manifest = read_manifest(package)?;
     fs::create_dir(dest).with_context(|| format!("creating {}", dest.display()))?;
     let mut total = 0u64;
     let mut dirs = vec![dest.to_path_buf()];
-    for entry in open(package)?.entries()? {
+    let (mut archive, count, len) = open_counted(package)?;
+    for entry in archive.entries()? {
+        progress(count.load(std::sync::atomic::Ordering::Relaxed).min(len), len);
         let mut entry = entry?;
         let rel = entry.path()?.into_owned();
         if !safe_rel(&rel.to_string_lossy()) {
@@ -317,7 +345,15 @@ pub fn unpack(package: &Path, dest: &Path) -> Result<Manifest> {
                 }
                 let exec = entry.header().mode()? & 0o111 != 0;
                 let mut f = fs::OpenOptions::new().write(true).create_new(true).mode(if exec { 0o755 } else { 0o644 }).open(&target)?;
-                std::io::copy(&mut entry, &mut f)?;
+                let mut buf = vec![0u8; 64 << 10];
+                loop {
+                    let n = entry.read(&mut buf)?;
+                    if n == 0 {
+                        break;
+                    }
+                    f.write_all(&buf[..n])?;
+                    progress(count.load(std::sync::atomic::Ordering::Relaxed).min(len), len);
+                }
                 f.flush()?;
                 f.sync_all()?;
             }

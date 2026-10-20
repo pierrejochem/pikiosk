@@ -31,6 +31,8 @@ RestartSec=2
 # the app sees only its own files (read-only) and its own state, at the
 # /data/app path kiosk apps use
 TemporaryFileSystem=/data:ro
+# an app can neither talk to kioskd (the PIN checks and installs) nor read kiosk.conf
+InaccessiblePaths=/boot /run/kioskd.sock
 BindReadOnlyPaths=/data/store/apps/%i
 BindPaths=/data/store/data/%i:/data/app
 NoNewPrivileges=yes

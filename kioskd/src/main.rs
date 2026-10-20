@@ -7,22 +7,27 @@
 //!   kioskd remove <id>     remove an app (its data stays)
 //!   kioskd list | local    installed apps | packages on local media
 //!   kioskd refresh         sync the signed store catalog now
+//!   kioskd rollback <id>   go back to the previous version of an app
 //!   kioskd get <id>        download, verify and install an app from the store
 //!
 //! Environment (all optional): KIOSKD_SOCK, KIOSKD_STORE, KIOSKD_UNIT_DIR,
-//! KIOSKD_UI_CONF, KIOSKD_ALLOW_UNSIGNED, KIOSKD_STORE_URL, KIOSKD_STORE_CHANNEL, KIOSKD_ROOT_JSON, KIOSKD_CLOCK_FLAG, KIOSKD_INSTALL_DIRS, KIOSKD_BOARD_FILE, KIOSKD_HOME_GESTURE (yes|no), KIOSKD_HOME_HOLD_MS,
+//! KIOSKD_UI_CONF, KIOSKD_ALLOW_UNSIGNED, KIOSKD_PIN_FILE, KIOSKD_PIN_LOCKOUT, KIOSKD_STORE_URL, KIOSKD_STORE_CHANNEL, KIOSKD_ROOT_JSON, KIOSKD_CLOCK_FLAG, KIOSKD_INSTALL_DIRS, KIOSKD_BOARD_FILE, KIOSKD_HOME_GESTURE (yes|no), KIOSKD_HOME_HOLD_MS,
 //! KIOSKD_DISPLAY (WxH).
 
+mod admin;
+mod health;
 mod home;
 mod install;
 mod launch;
+mod progress;
 mod server;
+mod state;
 mod store;
 
 use anyhow::{Result, bail};
 
 fn usage() -> ! {
-    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | refresh | get <id>");
+    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | refresh | get <id> | rollback <id>");
     std::process::exit(2);
 }
 
@@ -37,6 +42,7 @@ fn main() -> Result<()> {
         ["remove", id] => client(&format!(r#"{{"cmd":"remove","id":{}}}"#, serde_json::to_string(id)?)),
         ["list"] => client(r#"{"cmd":"list"}"#),
         ["local"] => client(r#"{"cmd":"local"}"#),
+        ["rollback", id] => client(&format!(r#"{{"cmd":"rollback","id":{}}}"#, serde_json::to_string(id)?)),
         ["refresh"] => client(r#"{"cmd":"store_refresh"}"#),
         ["get", id] => client(&format!(r#"{{"cmd":"store_install","id":{}}}"#, serde_json::to_string(id)?)),
         _ => usage(),
