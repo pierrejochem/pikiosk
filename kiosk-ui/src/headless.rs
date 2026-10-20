@@ -290,7 +290,7 @@ mod tests {
                                 r#"[{"id":"de.t.weather","name":"Weather","from":"1.5.0","to":"1.4.2","reason":"closed during its 30 s health check"}]"#
                             };
                             format!(
-                                r#"{{"ok":true,"data":{{"allow_unsigned":false,"board":"rpi3","local":[],"notices":{notices},"admin":{{"pin_set":true,"locked_for":0,"tries_left":3,"lockout":300}},"store":{{"enabled":true,"channel":"stable","synced_at":1792520000,"apps":[{{"id":"de.t.clock","name":"Clock","version":"1.0.0","category":"Info","size":1887436,"permissions":[],"installed":null,"update":false,"boards":[]}}]}},"apps":[{{"id":"de.t.weather","name":"Weather","version":"1.4.2","icon":null,"previous":null}},{{"id":"de.t.radio","name":"Web radio","version":"1.2.0","icon":null,"previous":null}}]}}}}"#
+                                r#"{{"ok":true,"data":{{"allow_unsigned":false,"board":"rpi3","local":[],"notices":{notices},"admin":{{"pin_set":true,"locked_for":0,"tries_left":3,"lockout":300}},"store":{{"enabled":true,"channel":"stable","synced_at":1792520000,"apps":[{{"id":"de.t.clock","name":"Clock & timer","version":"1.0.0","category":"Info","size":1887436,"permissions":[],"installed":null,"update":false,"boards":[]}},{{"id":"de.t.weather","name":"Weather","version":"1.5.0","category":"Info","size":3250585,"permissions":["network"],"installed":"1.4.2","update":true,"boards":[]}},{{"id":"de.t.menu","name":"Menu board","version":"2.3.1","category":"Info","size":4823449,"permissions":["network"],"installed":null,"update":false,"boards":[]}},{{"id":"de.t.door","name":"Door intercom","version":"0.9.0","category":"Building","size":2411724,"permissions":["network","audio"],"installed":"0.9.0","update":false,"boards":[]}}]}},"apps":[{{"id":"de.t.weather","name":"Weather","version":"1.4.2","icon":null,"previous":null}},{{"id":"de.t.radio","name":"Web radio","version":"1.2.0","icon":null,"previous":null}}]}}}}"#
                             )
                         }
                         "unlock" => {
@@ -431,6 +431,8 @@ mod tests {
             tap(&mut off, &mut app, &mut t, d(24.0 + 370.0 - 16.0 - 52.0, 162.0 + 56.0));
             let got = next("store_install");
             assert!(got["cmd"] == "store_install" && got["id"] == "de.t.clock" && got["token"] == "abc123", "{got}");
+            settle(&mut off, &mut app, &mut t, 20);
+            shot(&mut off, "detail");
         }
         unsafe { std::env::remove_var("KIOSKD_SOCK") };
         std::fs::remove_dir_all(&dir).ok();

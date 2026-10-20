@@ -123,7 +123,7 @@ impl Store {
         let from_catalog = |a: &CatalogApp| {
             let installed = a.installed.as_deref();
             let (button, line2) = match installed {
-                Some(v) if a.update => (CardButton::Update, format!("{v} → {} · {}", a.version, size_mb(a.size))),
+                Some(v) if a.update => (CardButton::Update, format!("{v} to {} · {}", a.version, size_mb(a.size))),
                 Some(v) => (CardButton::Installed, format!("{v} · installed")),
                 None => (CardButton::Install, format!("{} · {}", a.version, size_mb(a.size))),
             };
@@ -144,7 +144,7 @@ impl Store {
                 .map(|p: &LocalPackage| {
                     let (button, line2) = match p.installed.as_deref() {
                         Some(v) if v == p.version => (CardButton::Installed, format!("{} · installed", p.version)),
-                        Some(v) => (CardButton::Update, format!("{v} → {}", p.version)),
+                        Some(v) => (CardButton::Update, format!("{v} to {}", p.version)),
                         None => (CardButton::Install, p.version.clone()),
                     };
                     Card { id: p.id.clone(), name: p.name.clone(), line2, line3: "On the SD card".into(), button, file: Some(p.file.clone()), detail: false }
@@ -308,7 +308,7 @@ impl Store {
         let ib = Rect::from_min_size(left.min + vec2(d.f(20.0), d.f(20.0)), vec2(d.f(64.0), d.f(64.0)));
         initial_tile(&p, sc, ib, id, &name);
         let version = match (&installed, &cat) {
-            (Some(i), Some(c)) if c.update => format!("{} → {}", i.version, c.version),
+            (Some(i), Some(c)) if c.update => format!("{} to {}", i.version, c.version),
             (Some(i), _) => i.version.clone(),
             (None, Some(c)) => c.version.clone(),
             _ => String::new(),
