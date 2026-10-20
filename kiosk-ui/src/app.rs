@@ -10,6 +10,7 @@ use kiosk_kit::Lay;
 use kiosk_kit::glass::{BackdropParams, Glass, GlassSystem, Optics, Theme};
 use crate::backlight::Backlight;
 use kiosk_kit::calibrate::{Calibration, Matrix, Outcome, TouchRequest};
+use crate::store::Store;
 use crate::sysinfo::{self, Monitor};
 use kiosk_kit::widgets::{self as w, ACCENT, GREEN, Icon, Sc, text};
 
@@ -90,8 +91,9 @@ impl Settings {
     }
 }
 
-const PAGES: [(Icon, &str); 4] =
-    [(Icon::Home, "Home"), (Icon::Wifi, "Network"), (Icon::Sliders, "Controls"), (Icon::Gear, "Settings")];
+pub const APPS_PAGE: usize = 1;
+const PAGES: [(Icon, &str); 5] =
+    [(Icon::Home, "Home"), (Icon::Apps, "Apps"), (Icon::Wifi, "Network"), (Icon::Sliders, "Controls"), (Icon::Gear, "Settings")];
 
 pub struct KioskApp {
     pub glass: GlassSystem,
@@ -112,6 +114,9 @@ pub struct KioskApp {
     calib: Option<Calibration>,
     /// a touchscreen matrix change for the input backend to apply
     pub touch_request: Option<TouchRequest>,
+    pub store: Store,
+    /// the page of the previous frame, to refresh the Apps page when it opens
+    shown_page: usize,
 }
 
 impl KioskApp {
@@ -155,6 +160,8 @@ impl KioskApp {
             on_restart: None,
             calib: None,
             touch_request: None,
+            store: Store::new(),
+            shown_page: usize::MAX,
         }
     }
 
@@ -247,6 +254,15 @@ impl KioskApp {
         let info = self.monitor.get().clone();
         self.status_bar(ui, &l, base, screen, &info);
 
+        let bar_h = l.v(70.0, 60.0);
+        let bar_top = screen.bottom() - bar_h - l.v(24.0, 10.0);
+        self.store.poll(&ctx, time);
+        if self.page == APPS_PAGE && self.shown_page != APPS_PAGE {
+            self.store.back_to_grid();
+            self.store.refresh(&ctx);
+        }
+        self.shown_page = self.page;
+
         // pages slide and fade into each other
         let anim = ctx.animate_value_with_time(Id::unique("page"), self.page as f32, 0.38);
         for i in 0..PAGES.len() {
@@ -259,16 +275,16 @@ impl KioskApp {
             let sc = Sc { gs: &glass, u: l.wu, alpha, enabled: i == self.page };
             match i {
                 0 => self.home(ui, &l, sc, area, &info),
-                1 => self.network(ui, &l, sc, area, &info),
-                2 => self.controls(ui, &l, sc, area),
+                APPS_PAGE => self.store.ui(ui, &l, sc, area, bar_top),
+                2 => self.network(ui, &l, sc, area, &info),
+                3 => self.controls(ui, &l, sc, area),
                 _ => self.settings_page(ui, &l, sc, area, time),
             }
         }
 
         // tab bar
-        let bar_w = l.v(480.0, 420.0);
-        let bar_h = l.v(70.0, 60.0);
-        let bar = Rect::from_min_size(pos2(screen.center().x - bar_w * 0.5, screen.bottom() - bar_h - l.v(24.0, 10.0)), vec2(bar_w, bar_h));
+        let bar_w = l.v(600.0, 500.0);
+        let bar = Rect::from_min_size(pos2(screen.center().x - bar_w * 0.5, bar_top), vec2(bar_w, bar_h));
         w::tab_bar(ui, base, bar, Id::unique("tabs"), &PAGES, &mut self.page);
 
         if self.settings.show_fps {
@@ -697,5 +713,9 @@ impl kiosk_kit::App for KioskApp {
 
     fn set_cursor(&mut self, pos: Option<egui::Pos2>) {
         self.cursor = pos;
+    }
+
+    fn wake_fd(&self) -> Option<std::os::fd::RawFd> {
+        self.store.wake_fd()
     }
 }

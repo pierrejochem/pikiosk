@@ -2,13 +2,14 @@
 //!
 //!   kiosk-ui                         fullscreen on the display (DRM/KMS, Linux)
 //!   kiosk-ui --window                in a desktop window (build with --features desktop)
-//!   kiosk-ui --screenshot out.png [--size 1280x720] [--page home|network|controls|settings|all]
+//!   kiosk-ui --screenshot out.png [--size 1280x720] [--page home|apps|network|controls|settings|all]
 //!
 //! Environment: KIOSK_DATA (settings + wallpaper.jpg), KIOSK_WALLPAPER,
 //! KIOSK_THEME, KIOSK_SCALE, KIOSK_FPS (default 30), KIOSK_MODE (e.g. 1280x720).
 
 mod app;
 mod backlight;
+mod store;
 mod sysinfo;
 
 #[cfg(target_os = "linux")]
@@ -21,7 +22,7 @@ use app::KioskApp;
 
 fn usage() -> ! {
     eprintln!(
-        "usage: kiosk-ui [--window] [--screenshot FILE.png [--size WxH] [--page home|network|controls|settings|all]]"
+        "usage: kiosk-ui [--window] [--screenshot FILE.png [--size WxH] [--page home|apps|network|controls|settings|all]]"
     );
     std::process::exit(2);
 }
@@ -46,10 +47,11 @@ fn main() -> anyhow::Result<()> {
             "--page" => {
                 pages = match args.next().as_deref() {
                     Some("home") => vec![0],
-                    Some("network") => vec![1],
-                    Some("controls") => vec![2],
-                    Some("settings") => vec![3],
-                    Some("all") => vec![0, 1, 2, 3],
+                    Some("apps") => vec![1],
+                    Some("network") => vec![2],
+                    Some("controls") => vec![3],
+                    Some("settings") => vec![4],
+                    Some("all") => vec![0, 1, 2, 3, 4],
                     _ => usage(),
                 }
             }

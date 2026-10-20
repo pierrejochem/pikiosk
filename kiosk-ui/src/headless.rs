@@ -70,7 +70,7 @@ pub fn screenshot(mut app: KioskApp, out: &Path, size: [u32; 2], pages: &[usize]
     let mut off = Offscreen::new(size)?;
     let [w, h] = size;
     let ppp = pixels_per_point(h);
-    let names = ["home", "network", "controls", "settings"];
+    let names = ["home", "apps", "network", "controls", "settings"];
     let mut t = 12.0;
     for &page in pages {
         app.page = page;
@@ -128,10 +128,10 @@ mod tests {
             t += 0.03;
         }
 
-        // tab bar: 480 wide, four items; the fourth is "Settings"
-        let tab = |i: f32| pos2(640.0 - 240.0 + 6.0 + (480.0 - 12.0) / 4.0 * (i + 0.5), 720.0 - 24.0 - 35.0);
-        click(&mut off, &mut app, &mut t, tab(3.0), tab(3.0));
-        assert_eq!(app.page, 3, "tab bar should switch to Settings");
+        // tab bar: 600 wide, five items; the fifth is "Settings"
+        let tab = |i: f32| pos2(640.0 - 300.0 + 6.0 + (600.0 - 12.0) / 5.0 * (i + 0.5), 720.0 - 24.0 - 35.0);
+        click(&mut off, &mut app, &mut t, tab(4.0), tab(4.0));
+        assert_eq!(app.page, 4, "tab bar should switch to Settings");
 
         // "Show frame rate" toggle, first row of the System card
         assert!(!app.settings.show_fps);
@@ -139,8 +139,8 @@ mod tests {
         click(&mut off, &mut app, &mut t, toggle, toggle);
         assert!(app.settings.show_fps, "toggle should switch on");
 
-        click(&mut off, &mut app, &mut t, tab(2.0), tab(2.0));
-        assert_eq!(app.page, 2, "tab bar should switch to Controls");
+        click(&mut off, &mut app, &mut t, tab(3.0), tab(3.0));
+        assert_eq!(app.page, 3, "tab bar should switch to Controls");
 
         // drag the Frost slider all the way to the right
         let thumb = pos2(170.0 - 6.0 + 19.0 + (604.0 - 164.0 - 38.0) * 0.625, 84.0 + 112.0 + 38.0);
@@ -154,7 +154,7 @@ mod tests {
 
         // swipe right goes back to Network
         click(&mut off, &mut app, &mut t, pos2(640.0, 600.0), pos2(900.0, 600.0));
-        assert_eq!(app.page, 1, "swipe right should go to the previous page");
+        assert_eq!(app.page, 2, "swipe right should go to the previous page");
 
         // the frame actually contains glass: tab bar centre differs from a flat colour
         let img = off.read();
@@ -182,10 +182,10 @@ mod tests {
             t += 0.03;
         }
 
-        // compact tab bar: 420 wide, 10 from the bottom; third item is Controls
-        let tab = pos2(190.0 + 5.16 + 102.42 * 2.5, 440.0);
+        // compact tab bar: 500 wide, 10 from the bottom; fourth item is Controls
+        let tab = pos2(150.0 + 6.0 + 97.6 * 3.5, 440.0);
         click(&mut off, &mut app, &mut t, tab, tab);
-        assert_eq!(app.page, 2);
+        assert_eq!(app.page, 3);
 
         // drag the brightness thumb from 100% to about 20%
         click(&mut off, &mut app, &mut t, pos2(746.0, 152.0), pos2(500.0, 152.0));
@@ -212,9 +212,9 @@ mod tests {
         }
         let tap = |off: &mut Offscreen, app: &mut KioskApp, t: &mut f64, p: egui::Pos2| click(off, app, t, p, p);
 
-        // Settings: fourth tab of the 420 wide compact bar
-        tap(&mut off, &mut app, &mut t, pos2(190.0 + 5.16 + 102.42 * 3.5, 440.0));
-        assert_eq!(app.page, 3, "tab bar should switch to Settings");
+        // Settings: fifth tab of the 500 wide compact bar
+        tap(&mut off, &mut app, &mut t, pos2(150.0 + 6.0 + 97.6 * 4.5, 440.0));
+        assert_eq!(app.page, 4, "tab bar should switch to Settings");
 
         // "Calibrate" button, bottom left of the Touch screen card
         let calibrate_btn = pos2(122.0, 355.0);
@@ -263,5 +263,102 @@ mod tests {
         tap(&mut off, &mut app, &mut t, pos2(294.0, 355.0));
         assert_eq!(app.settings.touch_matrix, None);
         assert_eq!(app.touch_request.take(), Some(TouchRequest::Default));
+    }
+
+    /// A kioskd stand-in on a temporary socket: serves a fixed overview and
+    /// records the other requests it gets.
+    fn fake_kioskd(dir: &std::path::Path, local: bool) -> (std::path::PathBuf, std::sync::mpsc::Receiver<String>) {
+        use std::io::{BufRead, BufReader, Write};
+        let sock = dir.join("kioskd.sock");
+        let _ = std::fs::remove_file(&sock);
+        let listener = std::os::unix::net::UnixListener::bind(&sock).unwrap();
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            for s in listener.incoming().flatten() {
+                let mut line = String::new();
+                BufReader::new(&s).read_line(&mut line).unwrap();
+                let reply = if line.contains("overview") {
+                    let local = if local {
+                        r#"[{"file":"/boot/apps/clock.kpkg","id":"de.t.clock","name":"Clock","version":"2.0.0","installed":null}]"#
+                    } else {
+                        "[]"
+                    };
+                    format!(
+                        r#"{{"ok":true,"data":{{"allow_unsigned":true,"board":"rpi3","local":{local},"apps":[{{"id":"de.t.weather","name":"Weather","version":"1.4.2","icon":null}},{{"id":"de.t.radio","name":"Web radio","version":"1.2.0","icon":null}}]}}}}"#
+                    )
+                } else {
+                    tx.send(line.trim().to_string()).unwrap();
+                    r#"{"ok":true}"#.to_string()
+                };
+                writeln!(&s, "{reply}").unwrap();
+            }
+        });
+        (sock, rx)
+    }
+
+    fn settle(off: &mut Offscreen, app: &mut KioskApp, t: &mut f64, frames: usize) {
+        for _ in 0..frames {
+            off.gfx.frame(app, off.size, 1.0, vec![], *t);
+            *t += 0.03;
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    /// Apps tab -> the installed apps appear -> tapping a tile asks kioskd to
+    /// launch it; the local packages tile installs a package. 800x480 and 1280x720.
+    #[test]
+    fn apps_page_launches_and_installs() {
+        unsafe { std::env::remove_var("KIOSK_DATA") };
+        let dir = std::env::temp_dir().join(format!("kiosk-apps-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (sock, requests) = fake_kioskd(&dir, true);
+        unsafe { std::env::set_var("KIOSKD_SOCK", &sock) };
+
+        for size in [[800u32, 480], [1280, 720]] {
+            let mut off = Offscreen::new(size).expect("EGL surfaceless context (needs Mesa)");
+            let mut app = KioskApp::new();
+            let mut t = 1.0;
+            settle(&mut off, &mut app, &mut t, 3);
+            let (w, h) = (size[0] as f32, size[1] as f32);
+            let l = kiosk_kit::Lay::new(egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h)));
+
+            // second tab of the five
+            let bar_w = l.v(600.0, 500.0);
+            let tab = pos2(w * 0.5 - bar_w * 0.5 + 6.0 + (bar_w - 12.0) / 5.0 * 1.5, h - l.v(24.0, 10.0) - l.v(70.0, 60.0) * 0.5);
+            click(&mut off, &mut app, &mut t, tab, tab);
+            assert_eq!(app.page, crate::app::APPS_PAGE);
+            for _ in 0..200 {
+                settle(&mut off, &mut app, &mut t, 1);
+                if app.store.reachable.is_some() {
+                    break;
+                }
+            }
+            settle(&mut off, &mut app, &mut t, 40);
+            assert_eq!(app.store.apps.len(), 2, "the installed apps should be listed ({size:?})");
+            assert_eq!(app.store.reachable, Some(true));
+
+            // tap the second tile (Web radio)
+            let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(w, h));
+            let bar_top = h - l.v(70.0, 60.0) - l.v(24.0, 10.0);
+            let c = app.store.tile_center(&l, screen, bar_top, 1);
+            click(&mut off, &mut app, &mut t, c, c);
+            let got = requests.recv_timeout(std::time::Duration::from_secs(5)).expect("a launch request");
+            assert!(got.contains(r#""cmd":"launch""#) && got.contains("de.t.weather") == false && got.contains("de.t.radio"), "{got}");
+
+            // the dashed tile opens the local packages; Install sends the path
+            settle(&mut off, &mut app, &mut t, 20);
+            let c = app.store.tile_center(&l, screen, bar_top, 2);
+            click(&mut off, &mut app, &mut t, c, c);
+            settle(&mut off, &mut app, &mut t, 20);
+            let hy = l.v(104.0, 62.0);
+            let _ = hy;
+            let row = pos2(w * 0.5, l.v(150.0, 92.0) + l.v(92.0, 66.0) * 0.5);
+            let install = pos2(row.x + l.v(1100.0, 760.0).min(w - 2.0 * l.v(80.0, 24.0)) * 0.5 - l.v(24.0, 18.0) - l.v(140.0, 108.0) * 0.5, row.y);
+            click(&mut off, &mut app, &mut t, install, install);
+            let got = requests.recv_timeout(std::time::Duration::from_secs(5)).expect("an install request");
+            assert!(got.contains(r#""cmd":"install""#) && got.contains("/boot/apps/clock.kpkg"), "{got}");
+        }
+        unsafe { std::env::remove_var("KIOSKD_SOCK") };
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

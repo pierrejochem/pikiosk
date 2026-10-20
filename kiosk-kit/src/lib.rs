@@ -38,4 +38,11 @@ pub trait App {
 
     /// Tells the app where a mouse pointer is, or `None` when none is in use.
     fn set_cursor(&mut self, _pos: Option<egui::Pos2>) {}
+
+    /// An eventfd the app writes to when something happened off the UI
+    /// thread. The backend sleeps between frames, and this wakes it.
+    #[cfg(unix)]
+    fn wake_fd(&self) -> Option<std::os::fd::RawFd> {
+        None
+    }
 }

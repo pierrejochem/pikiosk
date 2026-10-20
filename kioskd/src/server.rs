@@ -20,7 +20,7 @@ enum Request {
     Remove { id: String },
     List,
     Local,
-    Status,
+    Overview,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -46,7 +46,12 @@ fn handle(line: &str) -> Reply {
         Ok(Request::Remove { id }) => install::remove(&paths, &id, &launch::running_apps()).map(|()| None),
         Ok(Request::List) => json(serde_json::to_value(install::installed(&paths))),
         Ok(Request::Local) => json(serde_json::to_value(install::local(&paths))),
-        Ok(Request::Status) => json(Ok(serde_json::json!({ "allow_unsigned": paths.allow_unsigned, "board": paths.board }))),
+        Ok(Request::Overview) => json(Ok(serde_json::json!({
+            "allow_unsigned": paths.allow_unsigned,
+            "board": paths.board,
+            "apps": install::installed(&paths),
+            "local": install::local(&paths),
+        }))),
         Err(e) => Err(anyhow::anyhow!("bad request: {e}")),
     };
     match result {

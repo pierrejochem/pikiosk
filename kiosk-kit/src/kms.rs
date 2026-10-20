@@ -335,11 +335,21 @@ pub fn run(mut app: impl App) -> anyhow::Result<()> {
         } else {
             deadline.saturating_duration_since(Instant::now()).min(Duration::from_secs(1))
         };
-        let mut pfds = [
+        let mut pfds = vec![
             libc::pollfd { fd: input.as_raw_fd(), events: libc::POLLIN, revents: 0 },
             libc::pollfd { fd: gbm.as_fd().as_raw_fd(), events: libc::POLLIN, revents: 0 },
         ];
+        if let Some(fd) = app.wake_fd() {
+            pfds.push(libc::pollfd { fd, events: libc::POLLIN, revents: 0 });
+        }
         unsafe { libc::poll(pfds.as_mut_ptr(), pfds.len() as libc::nfds_t, timeout.as_millis().min(i32::MAX as u128) as i32) };
+
+        if pfds.len() > 2 && pfds[2].revents & libc::POLLIN != 0 {
+            // the app has news: clear the eventfd and draw a frame soon
+            let mut n = 0u64;
+            unsafe { libc::read(pfds[2].fd, &mut n as *mut u64 as *mut c_void, 8) };
+            deadline = deadline.min(last_frame + frame_interval);
+        }
 
         if pfds[1].revents & libc::POLLIN != 0 {
             for e in gbm.receive_events().context("drm events")? {

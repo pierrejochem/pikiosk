@@ -64,6 +64,8 @@ pub enum Icon {
     Chip,
     Globe,
     Gear,
+    Apps,
+    Lock,
 }
 
 pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
@@ -128,6 +130,18 @@ pub fn icon(p: &Painter, icon: Icon, c: Pos2, size: f32, color: Color32) {
             p.line_segment([at(3.5, 12.0), at(20.5, 12.0)], st);
             p.add(Shape::line(arc(19.0, 12.0, 9.5, PI * 0.72, PI * 1.28), st));
             p.add(Shape::line(arc(5.0, 12.0, 9.5, -PI * 0.28, PI * 0.28), st));
+        }
+        Icon::Apps => {
+            for (x, y) in [(3.5, 3.5), (13.5, 3.5), (3.5, 13.5), (13.5, 13.5)] {
+                p.rect_stroke(Rect::from_min_max(at(x, y), at(x + 7.0, y + 7.0)), CornerRadius::same((1.5 * s) as u8), st, egui::StrokeKind::Middle);
+            }
+        }
+        Icon::Lock => {
+            p.rect_stroke(Rect::from_min_max(at(5.0, 11.0), at(19.0, 21.0)), CornerRadius::same((2.0 * s) as u8), st, egui::StrokeKind::Middle);
+            let mut shackle = vec![at(8.0, 11.0), at(8.0, 8.0)];
+            shackle.extend(arc(12.0, 8.0, 4.0, PI, 2.0 * PI));
+            shackle.extend([at(16.0, 8.0), at(16.0, 11.0)]);
+            p.add(Shape::line(shackle, st));
         }
         Icon::Gear => {
             p.circle_stroke(at(12.0, 12.0), 3.0 * s, st);
