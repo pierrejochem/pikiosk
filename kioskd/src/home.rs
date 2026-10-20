@@ -24,7 +24,7 @@ const ABS_MT_POSITION_X: u16 = 0x35;
 const ABS_MT_POSITION_Y: u16 = 0x36;
 
 /// The corner is this many pixels wide and tall.
-const CORNER_PX: f32 = 64.0;
+const CORNER_PX: f32 = 96.0;
 
 /// A 3x2 matrix in libinput's form: x' = a*x + b*y + c, y' = d*x + e*y + f,
 /// on coordinates scaled to 0..1.
@@ -300,20 +300,24 @@ mod tests {
     const SCREEN: (f32, f32) = (800.0, 480.0);
 
     #[test]
-    fn corner_is_top_right_64_px() {
+    fn corner_is_top_right_96_px() {
         // 760/800 = 0.95 from the left, 30/480 = 0.0625 from the top
         assert!(in_corner(IDENTITY, 0.95, 0.0625, SCREEN));
+        // 706/800 and 38/480: the Wi-Fi icon, where a fingertip landed in the field test
+        assert!(in_corner(IDENTITY, 0.883, 0.079, SCREEN));
+        assert!(!in_corner(IDENTITY, 0.85, 0.05, SCREEN), "680 px is outside");
         assert!(!in_corner(IDENTITY, 0.5, 0.05, SCREEN), "middle top");
         assert!(!in_corner(IDENTITY, 0.99, 0.5, SCREEN), "middle right");
         assert!(!in_corner(IDENTITY, 0.05, 0.05, SCREEN), "top left");
+        assert!(!in_corner(IDENTITY, 0.95, 0.25, SCREEN), "120 px down");
     }
 
     #[test]
     fn calibration_moves_the_corner() {
         // raw touches sit 5% too far left: the matrix shifts them right
         let m = [1.0, 0.0, 0.05, 0.0, 1.0, 0.0];
-        assert!(!in_corner(IDENTITY, 0.91, 0.02, SCREEN));
-        assert!(in_corner(m, 0.91, 0.02, SCREEN));
+        assert!(!in_corner(IDENTITY, 0.85, 0.02, SCREEN));
+        assert!(in_corner(m, 0.85, 0.02, SCREEN));
     }
 
     #[test]

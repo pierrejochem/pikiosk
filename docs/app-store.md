@@ -68,7 +68,7 @@ env = []
 
 **Watch the start limit.** `kiosk.service` counts every start toward `StartLimitBurst=5` in 120 s with `StartLimitAction=reboot`, so opening five apps in two minutes would reboot the board. `kioskd` runs `systemctl reset-failed kiosk.service` after each clean handback, or the limit moves into `kioskd` and counts only real crashes.
 
-**Getting home.** `kioskd` reads the touch device through evdev, read-only and without grabbing it. While an app runs, a 3-second press in the **top-right corner** (a 64×64 px area) counts as Home: `kioskd` stops the app unit and kiosk-ui starts. This works even when an app hangs. Raw evdev coordinates are uncalibrated, so `kioskd` applies the same calibration matrix kiosk-ui uses (the saved one from `/data/app/kiosk-ui.conf`, else the image's udev default). `KIOSK_HOME_GESTURE=no` in `kiosk.conf` turns it off. An app can also go home by exiting with status 0.
+**Getting home.** `kioskd` reads the touch device through evdev, read-only and without grabbing it. While an app runs, a 3-second press in the **top-right corner** (a 96×96 px area: on the resistive panel a 64 px target was missed in a field test) counts as Home: `kioskd` stops the app unit and kiosk-ui starts. This works even when an app hangs. Raw evdev coordinates are uncalibrated, so `kioskd` applies the same calibration matrix kiosk-ui uses (the saved one from `/data/app/kiosk-ui.conf`, else the image's udev default). `KIOSK_HOME_GESTURE=no` in `kiosk.conf` turns it off. An app can also go home by exiting with status 0.
 
 **kiosk-ui is always home.** Store apps start only from the Apps page, never at boot. `APP=` in `kiosk.conf` stays as it is for development (scp a binary to `/data/app`).
 
@@ -183,7 +183,7 @@ Each phase is a PR that leaves `master` releasable; move on when its check passe
 | --- | --- |
 | Who installs | Admin only, with the PIN; anyone can launch |
 | Boot app | kiosk-ui is always home; no `APP=store:<id>` |
-| Home gesture | 3 s hold in the top-right corner |
+| Home gesture | 3 s hold in the top-right corner (96×96 px) |
 | App runtimes | egui on `kiosk-kit` only |
 | Boards | Pi 3B, plus Pi 4 and Pi 5 |
 | Apps tab | Second, between Home and Network |
