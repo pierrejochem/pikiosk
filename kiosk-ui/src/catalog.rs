@@ -199,7 +199,8 @@ impl Store {
         let tabs = self.tabs();
         self.tab = self.tab.min(tabs.len().saturating_sub(1));
         let labels: Vec<&str> = tabs.iter().map(|(n, _)| n.as_str()).collect();
-        let strip = d.r(24.0, 100.0, (labels.iter().map(|l| w::text_width(&p, l, d.f(13.0)) / d.s + 36.0).sum::<f32>() + 8.0).min(752.0), 48.0);
+        let widest = labels.iter().map(|l| w::text_width(&p, l, d.f(13.0)) / d.s).fold(0.0, f32::max);
+        let strip = d.r(24.0, 100.0, (labels.len() as f32 * (widest + 36.0) + 8.0).min(752.0), 48.0);
         let before = self.tab;
         w::segmented(ui, sc, strip, Id::unique("store-tabs"), &labels, &mut self.tab);
         if before != self.tab {

@@ -368,6 +368,15 @@ mod tests {
             assert_eq!(app.store.apps.len(), 2, "the installed apps should be listed ({size:?})");
             assert_eq!(app.store.notices.len(), 1, "the rollback notice is shown");
 
+            // KIOSK_SHOTS=<dir> saves a picture of each stage (for the docs and for looking at)
+            let shot = |off: &mut Offscreen, name: &str| {
+                if let Some(dir) = std::env::var_os("KIOSK_SHOTS") {
+                    let img = off.read();
+                    let path = std::path::Path::new(&dir).join(format!("{name}-{}x{}.png", size[0], size[1]));
+                    image::save_buffer(path, &img, size[0], size[1], image::ColorType::Rgba8).unwrap();
+                }
+            };
+            shot(&mut off, "notice");
             // the notice blocks the page until OK; OK tells kioskd
             tap(&mut off, &mut app, &mut t, d(632.0 - 120.0 + 50.0, 342.0));
             assert_eq!(next("ack_notice")["cmd"], "ack_notice");
@@ -384,6 +393,7 @@ mod tests {
             let c = app.store.tile_center(&l, screen, bar_top, 2);
             tap(&mut off, &mut app, &mut t, c);
             assert!(app.store.pin.is_some(), "the PIN dialog should open");
+            shot(&mut off, "pin");
             let key = |k: char| {
                 let i = "123456789<0>".find(k).unwrap();
                 d(420.0 + (i % 3) as f32 * (232.0 / 3.0 + 10.0) + 232.0 / 6.0, 113.0 + (i / 3) as f32 * 66.0 + 28.0)
@@ -399,6 +409,7 @@ mod tests {
                 }
             }
             assert_eq!(app.store.pin.as_ref().and_then(|p| p.wrong), Some(2), "a wrong PIN reports the tries left");
+            shot(&mut off, "pin-wrong");
             assert!(!app.store.is_admin());
 
             for k in "1234>".chars() {
@@ -416,6 +427,7 @@ mod tests {
 
             // the catalog's first card: Install sends the token
             settle(&mut off, &mut app, &mut t, 20);
+            shot(&mut off, "catalog");
             tap(&mut off, &mut app, &mut t, d(24.0 + 370.0 - 16.0 - 52.0, 162.0 + 56.0));
             let got = next("store_install");
             assert!(got["cmd"] == "store_install" && got["id"] == "de.t.clock" && got["token"] == "abc123", "{got}");

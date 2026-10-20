@@ -357,6 +357,11 @@ impl Store {
         self.row = 0;
     }
 
+    /// A dialog covers the page: the tab bar steps aside.
+    pub fn modal(&self) -> bool {
+        self.pin.is_some() || (self.view == View::Apps && !self.notices.is_empty())
+    }
+
     pub(crate) fn is_admin(&self) -> bool {
         self.token.is_some()
     }

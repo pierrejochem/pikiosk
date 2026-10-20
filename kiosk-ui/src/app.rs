@@ -285,7 +285,9 @@ impl KioskApp {
         // tab bar
         let bar_w = l.v(600.0, 500.0);
         let bar = Rect::from_min_size(pos2(screen.center().x - bar_w * 0.5, bar_top), vec2(bar_w, bar_h));
-        w::tab_bar(ui, base, bar, Id::unique("tabs"), &PAGES, &mut self.page);
+        if !(self.page == APPS_PAGE && self.store.modal()) {
+            w::tab_bar(ui, base, bar, Id::unique("tabs"), &PAGES, &mut self.page);
+        }
 
         if self.settings.show_fps {
             let r = Rect::from_center_size(pos2(screen.center().x, l.v(34.0, 22.0)), vec2(l.v(96.0, 76.0), l.v(30.0, 24.0)));

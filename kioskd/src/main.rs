@@ -27,7 +27,7 @@ mod store;
 use anyhow::{Result, bail};
 
 fn usage() -> ! {
-    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | refresh | get <id> | rollback <id>");
+    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | overview | refresh | get <id> | rollback <id>");
     std::process::exit(2);
 }
 
@@ -42,6 +42,7 @@ fn main() -> Result<()> {
         ["remove", id] => client(&format!(r#"{{"cmd":"remove","id":{}}}"#, serde_json::to_string(id)?)),
         ["list"] => client(r#"{"cmd":"list"}"#),
         ["local"] => client(r#"{"cmd":"local"}"#),
+        ["overview"] => client(r#"{"cmd":"overview"}"#),
         ["rollback", id] => client(&format!(r#"{{"cmd":"rollback","id":{}}}"#, serde_json::to_string(id)?)),
         ["refresh"] => client(r#"{"cmd":"store_refresh"}"#),
         ["get", id] => client(&format!(r#"{{"cmd":"store_install","id":{}}}"#, serde_json::to_string(id)?)),
