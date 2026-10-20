@@ -28,8 +28,10 @@ ExecStopPost=+/usr/bin/systemctl reset-failed kiosk.service
 Restart=on-failure
 RestartSec=2
 
-# the app sees only its own state, at the /data/app path kiosk apps use
+# the app sees only its own files (read-only) and its own state, at the
+# /data/app path kiosk apps use
 TemporaryFileSystem=/data:ro
+BindReadOnlyPaths=/data/store/apps/%i
 BindPaths=/data/store/data/%i:/data/app
 NoNewPrivileges=yes
 ProtectSystem=strict
