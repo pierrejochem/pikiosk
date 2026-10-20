@@ -1886,10 +1886,12 @@ dependencies = [
  "log",
  "serde",
  "serde_json",
+ "tar",
  "tokio",
  "toml",
  "tough",
  "url",
+ "zstd",
 ]
 
 [[package]]
