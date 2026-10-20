@@ -149,6 +149,20 @@ kiosk-ui/src/headless.rs   offscreen rendering, screenshots, UI test
 kiosk-ui/src/desktop.rs    eframe window for development
 ```
 
+## Apps (in development)
+
+Apps are packages (`.kpkg`) that run one at a time on the display; kiosk-ui is always home. The
+plan is in [docs/app-store.md](docs/app-store.md). What works today:
+
+```sh
+cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg   # lints manifest.toml, icon, entry
+```
+
+Copy the package to an `apps` folder on the `KIOSKBOOT` partition, set `STORE_ALLOW_UNSIGNED=yes` in
+`kiosk.conf`, and install it from **Apps → Local packages** on the touchscreen. Tap an app tile to
+start it; hold the top-right corner of the screen for 3 seconds to go back to kiosk-ui. Installs
+are atomic: pulling the power during one leaves the previous version in place.
+
 ## Running a different app
 
 **Deploy to /data (fastest to iterate).** `/data` is a writable partition that grows to fill the card
