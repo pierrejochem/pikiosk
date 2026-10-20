@@ -21,7 +21,7 @@ use input::event::{DeviceEvent, EventTrait, KeyboardEvent, PointerEvent, TouchEv
 use input::{AsRaw as _, DeviceCapability, Libinput, LibinputInterface};
 use khronos_egl as egl;
 
-use crate::app::KioskApp;
+use crate::App;
 use crate::calibrate::{IDENTITY, TouchRequest};
 use crate::gfx::{Gfx, pixels_per_point};
 
@@ -254,7 +254,7 @@ fn apply_touch_calibration(dev: &mut input::Device, req: TouchRequest) {
     }
 }
 
-pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
+pub fn run(mut app: impl App) -> anyhow::Result<()> {
     let out = open_output()?;
     let (w, h) = out.mode.size();
     let (w, h) = (w as u32, h as u32);
@@ -316,11 +316,6 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
     let mut touch_devices: Vec<input::Device> = Vec::new();
     let mut touch_cal = app.touch_calibration();
 
-    app.on_restart = Some(Box::new(|| {
-        log::info!("restart requested");
-        std::process::exit(0); // systemd restarts the service
-    }));
-
     let fps: f64 = std::env::var("KIOSK_FPS").ok().and_then(|s| s.parse().ok()).filter(|f: &f64| *f >= 1.0).unwrap_or(30.0);
     let frame_interval = Duration::from_secs_f64(1.0 / fps);
     let start = Instant::now();
@@ -380,10 +375,10 @@ pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
             continue;
         }
 
-        app.cursor = ist.mouse_visible.then_some(ist.pointer);
+        app.set_cursor(ist.mouse_visible.then_some(ist.pointer));
         last_frame = now;
         let delay = gfx.frame(&mut app, [w, h], ppp, std::mem::take(&mut events), start.elapsed().as_secs_f64());
-        if let Some(req) = app.touch_request.take() {
+        if let Some(req) = app.take_touch_request() {
             touch_cal = req;
             for dev in &mut touch_devices {
                 apply_touch_calibration(dev, req);

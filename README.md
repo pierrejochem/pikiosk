@@ -134,15 +134,16 @@ With animation off, the screen redraws once a second for the clock and on touch.
 Source layout:
 
 ```
-kiosk-ui/src/glass.rs     glass renderer: wallpaper, blur chain, glass shader as egui paint callbacks
-kiosk-ui/src/shaders/     GLSL ES 1.00 shaders (re-prefixed for desktop GL on the Mac)
-kiosk-ui/src/widgets.rs   glass button, toggle, slider, segmented control, tab bar, icons
-kiosk-ui/src/app.rs       the four pages and settings
-kiosk-ui/src/calibrate.rs touch calibration: affine fit and the calibration screen
-kiosk-ui/src/kms.rs       DRM/KMS + GBM + EGL + libinput backend (prefers the DSI panel)
-kiosk-ui/src/backlight.rs display brightness via /sys/class/backlight
-kiosk-ui/src/headless.rs  offscreen rendering, screenshots, UI test
-kiosk-ui/src/desktop.rs   eframe window for development
+kiosk-kit/src/glass.rs     glass renderer: wallpaper, blur chain, glass shader as egui paint callbacks
+kiosk-kit/src/shaders/     GLSL ES 1.00 shaders (re-prefixed for desktop GL on the Mac)
+kiosk-kit/src/widgets.rs   glass button, toggle, slider, segmented control, tab bar, icons
+kiosk-kit/src/calibrate.rs touch calibration: affine fit and the calibration screen
+kiosk-kit/src/kms.rs       DRM/KMS + GBM + EGL + libinput backend (prefers the DSI panel)
+kiosk-kit/src/lib.rs       the `App` trait and `run`: what an app needs to draw on the display
+kiosk-ui/src/app.rs        the four pages and settings
+kiosk-ui/src/backlight.rs  display brightness via /sys/class/backlight
+kiosk-ui/src/headless.rs   offscreen rendering, screenshots, UI test
+kiosk-ui/src/desktop.rs    eframe window for development
 ```
 
 ## Running a different app
@@ -205,6 +206,8 @@ board/rpi3/genimage.cfg.in         SD card layout
 board/rpi3/post-build.sh           disables all logins, wires ro rootfs to /run and /data
 board/rpi3/rootfs-overlay/         systemd units, network files, config scripts
 board/rpi3/boot/                   files placed on the FAT partition
+Cargo.toml                         Cargo workspace: kiosk-ui and kiosk-kit
+kiosk-kit/                         display, touch and glass widgets as a library
 kiosk-ui/                          the kiosk app (Rust, egui, liquid glass)
 package/kiosk-ui/                  Buildroot package for it
 build.sh, docker/                  containerised build

@@ -10,7 +10,7 @@ use glow::HasContext as _;
 use khronos_egl as egl;
 
 use crate::app::KioskApp;
-use crate::gfx::{Gfx, pixels_per_point};
+use kiosk_kit::gfx::{Gfx, pixels_per_point};
 
 /// An offscreen GL context with a bound framebuffer of the given size.
 pub struct Offscreen {
@@ -150,7 +150,7 @@ mod tests {
         // segmented control: "Ocean"
         let ocean = pos2(164.0 + (440.0 / 4.0) * 2.5, 84.0 + 112.0 + 2.0 * 98.0 + 47.0);
         click(&mut off, &mut app, &mut t, ocean, ocean);
-        assert_eq!(app.settings.theme, crate::glass::Theme::Ocean);
+        assert_eq!(app.settings.theme, kiosk_kit::glass::Theme::Ocean);
 
         // swipe right goes back to Network
         click(&mut off, &mut app, &mut t, pos2(640.0, 600.0), pos2(900.0, 600.0));
@@ -201,7 +201,7 @@ mod tests {
     /// fitted matrix, keep it, then let a second run time out and revert.
     #[test]
     fn touch_calibration_flow() {
-        use crate::calibrate::{self, TARGETS, TouchRequest};
+        use kiosk_kit::calibrate::{self, TARGETS, TouchRequest};
         unsafe { std::env::remove_var("KIOSK_DATA") };
         let mut off = Offscreen::new([800, 480]).expect("EGL surfaceless context (needs Mesa)");
         let mut app = KioskApp::new();

@@ -6,11 +6,12 @@ use std::time::Duration;
 use chrono::{Local, Timelike};
 use egui::{Align2, Color32, CornerRadius, Id, Key, LayerId, Order, Pos2, Rect, Sense, Stroke, Ui, pos2, vec2};
 
-use crate::glass::{BackdropParams, Glass, GlassSystem, Optics, Theme};
+use kiosk_kit::Lay;
+use kiosk_kit::glass::{BackdropParams, Glass, GlassSystem, Optics, Theme};
 use crate::backlight::Backlight;
-use crate::calibrate::{Calibration, Matrix, Outcome, TouchRequest};
+use kiosk_kit::calibrate::{Calibration, Matrix, Outcome, TouchRequest};
 use crate::sysinfo::{self, Monitor};
-use crate::widgets::{self as w, ACCENT, GREEN, Icon, Sc, text};
+use kiosk_kit::widgets::{self as w, ACCENT, GREEN, Icon, Sc, text};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Settings {
@@ -604,34 +605,6 @@ impl KioskApp {
     }
 }
 
-/// Layout metrics. Two designs: the regular one is drawn for 1280x720 and
-/// scales with the screen height; the compact one is drawn for 800x480
-/// touch panels (bigger type and touch targets relative to the screen).
-pub struct Lay {
-    pub compact: bool,
-    /// design units -> points
-    pub k: f32,
-    /// scale for the widgets' own proportions
-    pub wu: f32,
-}
-
-impl Lay {
-    pub fn new(screen: Rect) -> Self {
-        let compact = screen.height() < 600.0 || screen.width() < 1000.0;
-        let k = if compact {
-            (screen.height() / 480.0).min(screen.width() / 800.0)
-        } else {
-            (screen.height() / 720.0).clamp(0.5, 3.0)
-        };
-        Self { compact, k, wu: if compact { 0.86 * k } else { k } }
-    }
-
-    /// pick the regular or compact design value
-    pub fn v(&self, regular: f32, compact: f32) -> f32 {
-        if self.compact { compact * self.k } else { regular * self.k }
-    }
-}
-
 fn tile_card(p: &egui::Painter, l: &Lay, sc: Sc, r: Rect, icon: Icon, title: &str, value: &str, sub: &str) {
     sc.glass(p, r, Glass::panel(l.v(30.0, 22.0)));
     let ic = l.v(34.0, 26.0);
@@ -706,5 +679,23 @@ mod tests {
         assert_eq!(back.touch_date, "19 Oct 2026");
         // nothing saved: use the device's default (the udev rule)
         assert_eq!(Settings::default().touch_matrix, None);
+    }
+}
+
+impl kiosk_kit::App for KioskApp {
+    fn ui(&mut self, ui: &mut egui::Ui) {
+        KioskApp::ui(self, ui)
+    }
+
+    fn touch_calibration(&self) -> TouchRequest {
+        KioskApp::touch_calibration(self)
+    }
+
+    fn take_touch_request(&mut self) -> Option<TouchRequest> {
+        self.touch_request.take()
+    }
+
+    fn set_cursor(&mut self, pos: Option<egui::Pos2>) {
+        self.cursor = pos;
     }
 }

@@ -41,7 +41,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/br-dl
-          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('configs/pikiosk_rpi3_defconfig', 'kiosk-ui/Cargo.lock') }}
+          key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ hashFiles('configs/pikiosk_rpi3_defconfig', 'Cargo.lock') }}
           restore-keys: br-dl-${{ env.BUILDROOT_VERSION }}-
 
       - name: Build

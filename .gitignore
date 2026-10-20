@@ -1,4 +1,5 @@
 # build output (images, kiosk-ui binary)
 /out/
+/target/
 # your SSH key goes on the boot partition, never into the repo
 /board/rpi3/boot/authorized_keys

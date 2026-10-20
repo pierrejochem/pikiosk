@@ -5,12 +5,14 @@
 ################################################################################
 
 KIOSK_UI_VERSION = 0.1.0
-KIOSK_UI_SITE = $(BR2_EXTERNAL_PIKIOSK_PATH)/kiosk-ui
+# the Cargo workspace root: kiosk-ui builds against kiosk-kit by path
+KIOSK_UI_SITE = $(BR2_EXTERNAL_PIKIOSK_PATH)
 KIOSK_UI_SITE_METHOD = local
 KIOSK_UI_LICENSE = MIT
 KIOSK_UI_DEPENDENCIES = host-pkgconf libinput mesa3d udev
 # don't copy a local development build into the Buildroot build dir
-KIOSK_UI_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = --exclude target
+KIOSK_UI_OVERRIDE_SRCDIR_RSYNC_EXCLUSIONS = \
+	--exclude /out --exclude /.git --exclude target
 
 KIOSK_UI_CARGO_ENV = \
 	PKG_CONFIG="$(PKG_CONFIG_HOST_BINARY)" \
@@ -26,7 +28,7 @@ define KIOSK_UI_BUILD_CMDS
 		$(TARGET_CONFIGURE_OPTS) \
 		$(PKG_CARGO_ENV) \
 		$(KIOSK_UI_CARGO_ENV) \
-		cargo build --release --locked --manifest-path Cargo.toml
+		cargo build --release --locked --manifest-path Cargo.toml -p kiosk-ui
 endef
 
 define KIOSK_UI_INSTALL_TARGET_CMDS

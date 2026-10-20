@@ -3,7 +3,7 @@
 
 use egui::{Align2, Color32, Event, Id, Key, PointerButton, Pos2, Rect, Stroke, Ui, pos2, vec2};
 
-use crate::app::Lay;
+use crate::layout::Lay;
 use crate::widgets::{self as w, ACCENT, GREEN, Sc, text};
 
 /// Where the crosses appear, normalised: the corners inset by 12%, then the centre.

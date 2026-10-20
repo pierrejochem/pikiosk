@@ -7,7 +7,7 @@ use std::time::Duration;
 use egui::{Pos2, RawInput, Rect, ViewportId, vec2};
 use glow::HasContext as _;
 
-use crate::app::KioskApp;
+use crate::App;
 
 pub struct Gfx {
     pub ctx: egui::Context,
@@ -37,7 +37,7 @@ impl Gfx {
 
     /// Runs and paints one frame into the currently bound framebuffer.
     /// Returns how long egui is happy to wait before the next frame.
-    pub fn frame(&mut self, app: &mut KioskApp, size_px: [u32; 2], ppp: f32, events: Vec<egui::Event>, time: f64) -> Duration {
+    pub fn frame(&mut self, app: &mut dyn App, size_px: [u32; 2], ppp: f32, events: Vec<egui::Event>, time: f64) -> Duration {
         let mut raw = RawInput {
             screen_rect: Some(Rect::from_min_size(Pos2::ZERO, vec2(size_px[0] as f32, size_px[1] as f32) / ppp)),
             time: Some(time),

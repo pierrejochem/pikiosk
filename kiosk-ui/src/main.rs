@@ -9,17 +9,10 @@
 
 mod app;
 mod backlight;
-mod calibrate;
-mod glass;
 mod sysinfo;
-mod widgets;
 
 #[cfg(target_os = "linux")]
-mod gfx;
-#[cfg(target_os = "linux")]
 mod headless;
-#[cfg(target_os = "linux")]
-mod kms;
 
 #[cfg(feature = "desktop")]
 mod desktop;
@@ -66,7 +59,12 @@ fn main() -> anyhow::Result<()> {
     }
     let _ = (&size, &pages);
 
-    let app = KioskApp::new();
+    let mut app = KioskApp::new();
+    // systemd restarts the service
+    app.on_restart = Some(Box::new(|| {
+        log::info!("restart requested");
+        std::process::exit(0);
+    }));
 
     if let Some(path) = shot {
         #[cfg(target_os = "linux")]
@@ -83,7 +81,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     #[cfg(target_os = "linux")]
-    return kms::run(app);
+    return kiosk_kit::run(app);
     #[cfg(not(target_os = "linux"))]
     unreachable!()
 }

@@ -10,13 +10,12 @@ impl eframe::App for DesktopApp {
     }
 }
 
-pub fn run(mut app: KioskApp) -> anyhow::Result<()> {
+pub fn run(app: KioskApp) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 720.0]).with_title("kiosk-ui"),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
-    app.on_restart = Some(Box::new(|| std::process::exit(0)));
     eframe::run_native(
         "kiosk-ui",
         options,
