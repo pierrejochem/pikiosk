@@ -10,7 +10,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 
-use egui::{Align2, Color32, CornerRadius, Id, Pos2, Rect, Sense, Shape, Stroke, TextureHandle, Ui, pos2, vec2};
+use egui::{Align2, Color32, CornerRadius, Id, Rect, Sense, Shape, Stroke, TextureHandle, Ui, pos2, vec2};
 use kiosk_kit::Lay;
 use kiosk_kit::glass::Glass;
 use kiosk_kit::widgets::{self as w, GREEN, Icon, Sc, text};
@@ -507,7 +507,7 @@ impl Store {
 
     /// Centre of the nth tile in the grid view (for tests).
     #[cfg(test)]
-    pub fn tile_center(&self, l: &Lay, area: Rect, bar_top: f32, n: usize) -> Pos2 {
+    pub fn tile_center(&self, l: &Lay, area: Rect, bar_top: f32, n: usize) -> egui::Pos2 {
         let g = Grid::new(l, area, bar_top, l.v(170.0, 132.0));
         let s = &self.slots(&g)[n];
         g.rect(s.row, s.col, s.span, self.row).center()
