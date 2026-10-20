@@ -191,3 +191,13 @@ Each phase is a PR that leaves `master` releasable; move on when its check passe
 | Apps tab | Second, between Home and Network |
 | Store tile | Shown to everyone; tapping it asks for the PIN |
 | Wrong PIN | 3 tries, then locked for `STORE_PIN_LOCKOUT` seconds, default 300 |
+
+## Phase 6 status
+
+Built and checked on a Pi 3B: the admin PIN with lockout, the health gate with automatic rollback, and the Store screens in kiosk-ui (PIN keypad, catalog, app detail with install progress, rollback notice).
+
+- **PIN and token.** `kioskd` checks the PIN against a root-only file written from `STORE_PIN` (4 to 8 digits; empty means nobody can be admin). A correct PIN returns a random token that kiosk-ui sends with install, update, remove and roll-back requests. It ends 60 s after its last use; every touch extends it. Root on the device (an SSH session) needs no token. After 3 wrong PINs every PIN is refused for `STORE_PIN_LOCKOUT` seconds. The wrong-PIN count is saved at once and the remaining lockout every 10 s, so a power cut keeps the lock: after a hard reset with 98 s left, the board came back with 98 s left.
+- **Apps cannot reach `kioskd`.** `kiosk-app@.service` hides `/run/kioskd.sock` and `/boot` from the app (the PIN is in `kiosk.conf`). For the same reason an app cannot call `ready`, which the first draft planned: the health gate is the 30 s stay-up rule only.
+- **Health gate.** It starts the first time a new version runs. If the unit crashes (or waits to restart after a failure) within 30 s, `kioskd` stops it, switches back to the previous version, deletes and blocks the bad one and stores a notice. An app that exits with status 0 or is stopped early stays pending, and the next launch tries again. Test: an update that crashes on start was rolled back about one second after it was launched.
+- **Install progress.** The install request blocks, and kiosk-ui polls a `progress` request about three times a second (download bytes, then unpack position).
+- **Not built:** the Store settings block in Settings (the catalog header has the channel, last sync and a Check now button instead), and the `Roll back` button is not hidden when the previous version is the failed one (it is deleted, so it is unavailable).
