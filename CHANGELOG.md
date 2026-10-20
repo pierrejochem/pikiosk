@@ -23,7 +23,7 @@ Raspberry Pi 4 and Pi 5, and apps.
 - The touch Home gesture reads the panel's multitouch tracking id: the Waveshare panel sends no `BTN_TOUCH`.
 
 **Security**
-- Reviewed before release; see docs/app-store.md. Fixed: package-controlled environment variables reaching a root command, the socket hiding that broke when `kioskd` restarted, unbounded socket requests, hostile icons, store downgrades, and a wrong PIN ending a live admin session.
+- Reviewed before release; see docs/app-store.md. Fixed: package-controlled environment variables reaching a root command (hand-back now goes through its own root unit), the socket hiding that broke when `kioskd` restarted, unbounded socket requests, hostile icons, store downgrades, and a wrong PIN ending a live admin session.
 
 **Known limits**
 - An app can block the Home gesture by grabbing the touch device, and there is no memory or disk cap for apps (the kernel's memory cgroup is off).

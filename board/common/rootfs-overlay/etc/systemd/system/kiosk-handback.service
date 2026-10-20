@@ -1,0 +1,15 @@
+[Unit]
+Description=Give the display back to kiosk-ui
+# Started by kiosk-app@.service when an app ends, however it ends. It exists so that
+# no command runs as root with the app's environment: the app unit's Environment=
+# comes from a package, and a root ExecStopPost there would inherit it (LD_PRELOAD).
+Wants=kiosk.service
+Before=kiosk.service
+# many quick hand-backs must not hit this unit's own start limit
+StartLimitIntervalSec=0
+
+[Service]
+Type=oneshot
+# kiosk.service counts every start toward its crash-loop reboot limit; clearing it
+# here keeps normal hand-backs from adding up to a reboot
+ExecStart=/usr/bin/systemctl reset-failed kiosk.service

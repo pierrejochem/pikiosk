@@ -4,8 +4,8 @@ Description=Kiosk app %i
 # when the app ends, however it ends
 Conflicts=kiosk.service
 After=kiosk.service kiosk-config.service data.mount
-OnSuccess=kiosk.service
-OnFailure=kiosk.service
+OnSuccess=kiosk-handback.service
+OnFailure=kiosk-handback.service
 # crash loop protection: after 5 failures in 2 minutes give up and show kiosk-ui
 StartLimitIntervalSec=120
 StartLimitBurst=5
@@ -22,11 +22,6 @@ RuntimeDirectoryMode=0700
 WorkingDirectory=/data/app
 # kioskd writes a drop-in that sets the real program, arguments and permissions
 ExecStart=/bin/false
-# kiosk.service counts every start toward its own crash-loop reboot limit;
-# clearing it here keeps normal hand-backs from adding up to a reboot. This
-# runs as root outside the sandbox but still gets the unit's Environment=, which
-# a package controls (LD_PRELOAD!), so it starts from an empty environment.
-ExecStopPost=+/usr/bin/env -i /usr/bin/systemctl reset-failed kiosk.service
 Restart=on-failure
 RestartSec=2
 # a runaway app must not starve kiosk-ui and kioskd: fewer tasks, less CPU, first to be OOM-killed
