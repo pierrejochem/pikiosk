@@ -9,6 +9,11 @@ EnvironmentFile=-/run/kiosk/kioskd.env
 ExecStart=/usr/sbin/kioskd daemon
 Restart=always
 RestartSec=2
+# /run/kioskd holds the socket; it stays across restarts, so apps that have it hidden keep it hidden
+RuntimeDirectory=kioskd
+RuntimeDirectoryMode=0755
+RuntimeDirectoryPreserve=yes
+OOMScoreAdjust=-900
 ProtectSystem=strict
 ReadWritePaths=/data/store /run
 NoNewPrivileges=yes

@@ -154,7 +154,7 @@ The one structural change is a Cargo workspace at the repo root, because kiosk-u
 | `kiosk-ui/src/store.rs` (new) | Apps page, Store views, PIN keypad and socket client; `app.rs` gains the Apps tab second |
 | `package/kioskd/` (new) | Buildroot `cargo-package`; installs `/usr/sbin/kioskd` and `/usr/share/kioskd/root.json` |
 | `package/kiosk-ui/kiosk-ui.mk` | `SITE` = repo root (excluding `out/`), build with `-p kiosk-ui` |
-| `rootfs-overlay/.../kioskd.service` (new) | Root service, `After=data.mount`, socket `/run/kioskd.sock` group `kiosk` mode 0660 |
+| `rootfs-overlay/.../kioskd.service` (new) | Root service, `After=data.mount`, socket `/run/kioskd/kioskd.sock` group `kiosk` mode 0660 |
 | `rootfs-overlay/.../kiosk-app@.service` (new) | The app template unit described above |
 | `post-build.sh` | Enable `kioskd.service`; write `/etc/pikiosk-board` (`rpi3`, `rpi4` or `rpi5`) for the `boards` check |
 | `apply-config`, `boot/kiosk.conf` | `STORE_URL`, `STORE_CHANNEL`, `STORE_PIN`, `STORE_PIN_LOCKOUT`, `KIOSK_HOME_GESTURE` |
@@ -199,7 +199,30 @@ Each phase is a PR that leaves `master` releasable; move on when its check passe
 Built and checked on a Pi 3B: the admin PIN with lockout, the health gate with automatic rollback, and the Store screens in kiosk-ui (PIN keypad, catalog, app detail with install progress, rollback notice).
 
 - **PIN and token.** `kioskd` checks the PIN against a root-only file written from `STORE_PIN` (4 to 8 digits; empty means nobody can be admin). A correct PIN returns a random token that kiosk-ui sends with install, update, remove and roll-back requests. It ends 60 s after its last use; every touch extends it. Root on the device (an SSH session) needs no token. After 3 wrong PINs every PIN is refused for `STORE_PIN_LOCKOUT` seconds. The wrong-PIN count is saved at once and the remaining lockout every 10 s, so a power cut keeps the lock: after a hard reset with 98 s left, the board came back with 98 s left.
-- **Apps cannot reach `kioskd`.** `kiosk-app@.service` hides `/run/kioskd.sock` and `/boot` from the app (the PIN is in `kiosk.conf`). For the same reason an app cannot call `ready`, which the first draft planned: the health gate is the 30 s stay-up rule only.
+- **Apps cannot reach `kioskd`.** `kiosk-app@.service` hides `/run/kioskd` (the socket's directory) and `/boot` from the app (the PIN is in `kiosk.conf`). For the same reason an app cannot call `ready`, which the first draft planned: the health gate is the 30 s stay-up rule only.
 - **Health gate.** It starts the first time a new version runs. If the unit crashes (or waits to restart after a failure) within 30 s, `kioskd` stops it, switches back to the previous version, deletes and blocks the bad one and stores a notice. An app that exits with status 0 or is stopped early stays pending, and the next launch tries again. Test: an update that crashes on start was rolled back about one second after it was launched.
 - **Install progress.** The install request blocks, and kiosk-ui polls a `progress` request about three times a second (download bytes, then unpack position).
 - **Not built:** the Store settings block in Settings (the catalog header has the channel, last sync and a Check now button instead).
+
+## Security review (before v0.2.0)
+
+An independent read of the store code, `kioskd` and the unit files found these. Each was checked against the code; two were reproduced on the Pi.
+
+Fixed:
+- **A package could get root through `env`.** `ExecStopPost=+` runs as root outside the sandbox but inherits the unit's `Environment=`, which a package sets, so `LD_PRELOAD` loaded the package's own library as root. The command now runs under `env -i`, and `kpkg` refuses `LD_*`, `GLIBC_*`, `SYSTEMD_*`, `MALLOC_*`, `KIOSK_*`, `PATH`, `HOME` and similar keys.
+- **The socket block broke when `kioskd` restarted.** Hiding a single socket file is undone when the file is replaced (reproduced on the Pi: the sandbox saw the real socket after a restart). The socket now lives in `/run/kioskd`, a directory that is kept across restarts and hidden from apps.
+- **Socket requests had no bounds.** A request line is now limited to 4 KiB and 10 s, and at most 16 connections are served at once.
+- **A hostile icon could crash-loop kiosk-ui into the reboot limit.** Icons are checked at install (regular file, at most 64 KiB, PNG header, 128×128), and kiosk-ui refuses oversized ones before decoding.
+- **A wrong PIN ended a live admin session.** It no longer does. If the failed-attempt count cannot be saved (disk full), kioskd now locks instead of forgetting it.
+- **The store could downgrade.** An admin install now refuses a store version older than the installed one.
+- Packages with more than 10,000 entries are refused, and the temporary copy of `kiosk.conf` is private.
+- Apps get `TasksMax=128`, `CPUWeight=50` and `OOMScoreAdjust=500`; kioskd and kiosk-ui are protected from the OOM killer.
+
+Already handled: a rewound clock cannot revive expired metadata, because `tough` keeps the latest known time in its datastore and refuses to run if the clock steps back.
+
+Known limits, not fixed:
+- **An app can block the Home gesture.** Apps need the `input` group to read touch, and an app can take an exclusive grab on the touch device, so `kioskd` no longer sees the press. Recovery is a power cycle or SSH. The mitigation is curation: only the admin's signed catalog installs apps. A real fix would have `kioskd` own the device and forward events.
+- **No memory cap for apps.** This kernel's memory cgroup controller is not enabled (`cpuset cpu io pids`). The OOM score adjustment is the only protection until `cgroup_enable=memory` is set and tested.
+- **No disk quota.** An app can fill `/data`, which breaks installs and state writes.
+- **Apps and kiosk-ui share the `kiosk` uid.** A compromised kiosk-ui can read `/boot/kiosk.conf` (the PIN and WiFi password). Apps cannot, because their unit hides `/boot`.
+- Any process that can reach the socket can lock the admin out by sending wrong PINs.

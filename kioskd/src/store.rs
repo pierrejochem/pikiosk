@@ -204,6 +204,11 @@ pub fn install_app(cfg: &Config, paths: &Paths, id: &str, running: &[String]) ->
         let cat = read_catalog(&repo).await?;
         let visible = without_blocked(&cat, &paths.store);
         let entry = visible.newest_for(paths.board.as_deref()).into_iter().find(|e| e.id == id).cloned().with_context(|| format!("{id} is not in the catalog for this board"))?;
+        if let Some(cur) = install::current_version(paths, id)
+            && kpkg::parse_version(&cur) > kpkg::parse_version(&entry.version)
+        {
+            bail!("{id} {cur} is newer than the store's {}; use Roll back to go back on purpose", entry.version);
+        }
         let file = download(cfg, &repo, &entry).await?;
         let _ = cfg.save_catalog(&cat);
         anyhow::Ok((entry, file))
@@ -404,6 +409,22 @@ mod tests {
         let a = install_app(&e.cfg, &e.paths, "t.app", &[]).unwrap();
         assert_eq!((a.version.as_str(), a.previous.as_deref()), ("1.1.0", Some("1.0.0")));
         assert!(install_app(&e.cfg, &e.paths, "no.such.app", &[]).is_err());
+    }
+
+    #[test]
+    fn the_store_does_not_downgrade() {
+        let e = run(Env::new("downgrade"));
+        let pk = e.root.join("publisher");
+        package(&pk, "t.app", "1.0.0", "");
+        run(e.publisher.publish(1, &e.pkgs(), Timestamp::now() + hours(24)));
+        // 2.0.0 was installed some other way; the store only has 1.0.0
+        let newer = e.root.join("newer.kpkg");
+        package(&e.root.join("other"), "t.app", "2.0.0", "");
+        std::fs::copy(e.root.join("other/pkgs/t.app-2.0.0.kpkg"), &newer).unwrap();
+        install::install_package(&e.paths, &newer, &[], None).unwrap();
+        let err = install_app(&e.cfg, &e.paths, "t.app", &[]).unwrap_err().to_string();
+        assert!(err.contains("newer than the store"), "{err}");
+        assert_eq!(install::installed(&e.paths)[0].version, "2.0.0");
     }
 
     #[test]

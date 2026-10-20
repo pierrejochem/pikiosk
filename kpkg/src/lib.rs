@@ -16,6 +16,10 @@ pub const PERMISSIONS: [&str; 4] = ["network", "audio", "gpio", "serial"];
 pub const MAX_UNPACKED: u64 = 256 << 20;
 const MAX_MANIFEST: u64 = 64 << 10;
 const ICON_SIZE: u32 = 128;
+/// A package with more entries than this is refused: each one costs an inode and an fsync.
+const MAX_ENTRIES: usize = 10_000;
+/// An icon larger than this is refused, whatever it claims to be.
+const MAX_ICON_BYTES: u64 = 64 << 10;
 
 #[derive(Debug, Clone, Deserialize)]
 pub struct Manifest {
@@ -59,6 +63,17 @@ pub fn parse_version(v: &str) -> Option<(u32, u32, u32)> {
     };
     let r = (n(it.next())?, n(it.next())?, n(it.next())?);
     it.next().is_none().then_some(r)
+}
+
+/// Variable names an app may set. Not allowed: anything that changes how the dynamic
+/// linker, systemd or a shell start a program, and the variables kiosk itself provides.
+fn env_key_ok(key: &str) -> bool {
+    const RESERVED: [&str; 12] = ["PATH", "IFS", "HOME", "USER", "LOGNAME", "SHELL", "BASH_ENV", "ENV", "TMPDIR", "XDG_RUNTIME_DIR", "KIOSK_DATA", "LANG_PATH"];
+    let mut chars = key.chars();
+    chars.next().is_some_and(|c| c.is_ascii_alphabetic() || c == '_')
+        && chars.all(|c| c.is_ascii_alphanumeric() || c == '_')
+        && !["LD_", "GLIBC_", "SYSTEMD_", "MALLOC_", "KIOSK_"].iter().any(|p| key.starts_with(p))
+        && !RESERVED.contains(&key)
 }
 
 /// A path inside a package: relative, no `..`, no empty parts.
@@ -112,8 +127,9 @@ impl Manifest {
             }
         }
         for e in &self.env {
-            if e.starts_with('=') || !e.contains('=') || e.chars().any(|c| c.is_control()) {
-                bail!("env entry {e:?} is not KEY=value");
+            let Some((key, _)) = e.split_once('=') else { bail!("env entry {e:?} is not KEY=value") };
+            if e.chars().any(|c| c.is_control()) || !env_key_ok(key) {
+                bail!("env entry {e:?} is not KEY=value, or its key is not allowed for an app");
             }
         }
         if self.args.iter().any(|a| a.chars().any(|c| c.is_control())) {
@@ -184,6 +200,20 @@ impl Catalog {
             }
         }
         out
+    }
+}
+
+/// Checks an unpacked icon: a regular file, small, a real PNG header, 128x128. The UI
+/// decodes it at every start, so a bad one must never get that far.
+pub fn check_icon(path: &Path) -> Result<()> {
+    let meta = fs::symlink_metadata(path).with_context(|| format!("icon {} is missing", path.display()))?;
+    if !meta.is_file() || meta.len() > MAX_ICON_BYTES {
+        bail!("icon must be a regular file of at most {} KiB", MAX_ICON_BYTES >> 10);
+    }
+    match png_size(&fs::read(path)?) {
+        Some((ICON_SIZE, ICON_SIZE)) => Ok(()),
+        Some((w, h)) => bail!("icon is {w}x{h}, it must be {ICON_SIZE}x{ICON_SIZE}"),
+        None => bail!("icon is not a PNG"),
     }
 }
 
@@ -320,7 +350,12 @@ pub fn unpack_with_progress(package: &Path, dest: &Path, progress: &mut dyn FnMu
     let mut total = 0u64;
     let mut dirs = vec![dest.to_path_buf()];
     let (mut archive, count, len) = open_counted(package)?;
+    let mut entries = 0usize;
     for entry in archive.entries()? {
+        entries += 1;
+        if entries > MAX_ENTRIES {
+            bail!("package has more than {MAX_ENTRIES} entries");
+        }
         progress(count.load(std::sync::atomic::Ordering::Relaxed).min(len), len);
         let mut entry = entry?;
         let rel = entry.path()?.into_owned();
@@ -451,6 +486,56 @@ mod tests {
         assert_eq!(newest.len(), 1);
         assert_eq!(newest[0].version, "1.10.0", "1.10.0 is newer than 1.5.0");
         assert!(c.newest_for(Some("rpi4")).is_empty(), "the app is for rpi3 and rpi5 only");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn apps_cannot_set_dangerous_environment_variables() {
+        let ok = |kv: &str| Manifest::parse(&format!("id='a'\nversion='1.0.0'\nname='A'\nentry='x'\nenv=[\"{kv}\"]")).is_ok();
+        assert!(ok("QT_QPA_PLATFORM=eglfs") && ok("MY_VAR=1"));
+        for bad in ["LD_PRELOAD=/x.so", "LD_LIBRARY_PATH=/x", "GLIBC_TUNABLES=x", "SYSTEMD_LOG_LEVEL=debug", "PATH=/x", "HOME=/", "IFS=x", "KIOSK_DATA=/", "MALLOC_CHECK_=1", "1X=1", "A B=1", "=x"] {
+            assert!(!ok(bad), "{bad} should be refused");
+        }
+    }
+
+    #[test]
+    fn icons_are_checked_after_unpacking() {
+        let root = tmp("icon");
+        let f = root.join("icon.png");
+        fs::write(&f, png(128, 128)).unwrap();
+        assert!(check_icon(&f).is_ok());
+        fs::write(&f, png(40000, 40000)).unwrap();
+        assert!(check_icon(&f).unwrap_err().to_string().contains("40000x40000"));
+        let mut big = png(128, 128);
+        big.resize(70 << 10, 0);
+        fs::write(&f, big).unwrap();
+        assert!(check_icon(&f).unwrap_err().to_string().contains("at most"));
+        fs::write(&f, "x").unwrap();
+        assert!(check_icon(&f).is_err());
+        std::os::unix::fs::symlink("/etc/passwd", root.join("link.png")).unwrap();
+        assert!(check_icon(&root.join("link.png")).is_err(), "a symlink is not a regular file");
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn a_package_with_too_many_entries_is_refused() {
+        let root = tmp("many");
+        let out = root.join("many.kpkg");
+        let mut tar = tar::Builder::new(zstd::Encoder::new(File::create(&out).unwrap(), 1).unwrap());
+        let manifest = "id='a.b'\nversion='1.0.0'\nname='A'\nentry='x'\n";
+        let mut h = tar::Header::new_gnu();
+        h.set_size(manifest.len() as u64);
+        h.set_mode(0o644);
+        tar.append_data(&mut h, "manifest.toml", manifest.as_bytes()).unwrap();
+        for i in 0..=MAX_ENTRIES {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(0);
+            h.set_mode(0o644);
+            tar.append_data(&mut h, format!("f{i}"), std::io::empty()).unwrap();
+        }
+        tar.into_inner().unwrap().finish().unwrap();
+        let err = unpack(&out, &root.join("dest")).unwrap_err().to_string();
+        assert!(err.contains("more than"), "{err}");
         fs::remove_dir_all(root).unwrap();
     }
 

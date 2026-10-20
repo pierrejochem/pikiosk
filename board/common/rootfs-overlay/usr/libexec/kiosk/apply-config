@@ -44,7 +44,7 @@ STORE_PIN_LOCKOUT=300
 # ---- parse (never sourced: only whitelisted keys are accepted) ----------------
 if [ -r "$CONF" ]; then
 	# tolerate CRLF line endings from editors on Windows
-	tr -d '\r' < "$CONF" > "$RUN/kiosk.conf"
+	(umask 077; tr -d '\r' < "$CONF" > "$RUN/kiosk.conf")
 	while IFS= read -r line || [ -n "$line" ]; do
 		case "$line" in
 			''|'#'*) continue ;;

@@ -65,7 +65,8 @@ impl Admin {
         Admin { file, pin, lockout, inner: Mutex::new(Inner { fails: saved.fails, locked_until, token: None }) }
     }
 
-    fn save(&self, i: &Inner, now: Instant) {
+    /// Writes the PIN state; false if it could not be saved.
+    fn save(&self, i: &Inner, now: Instant) -> bool {
         let remaining = i.locked_until.map_or(0, |t| t.saturating_duration_since(now).as_secs() + 1);
         let tmp = self.file.with_extension("new");
         let result = (|| -> std::io::Result<()> {
@@ -77,9 +78,10 @@ impl Admin {
             f.sync_all()?;
             std::fs::rename(&tmp, &self.file)
         })();
-        if let Err(e) = result {
+        if let Err(e) = &result {
             log::warn!("could not save the PIN state: {e}");
         }
+        result.is_ok()
     }
 
     fn locked_secs(i: &Inner, now: Instant) -> u64 {
@@ -104,14 +106,20 @@ impl Admin {
             self.save(&i, now);
             return Unlock::Ok(token);
         }
+        // a wrong PIN does not end a live admin session: anyone who can reach the
+        // socket could otherwise log the admin out at will
         i.fails += 1;
-        i.token = None;
-        if i.fails >= MAX_TRIES {
+        // if the count cannot be saved (disk full), a power cut would forget it: lock instead
+        let saved = {
+            let ok = self.save(&i, now);
+            ok || i.fails >= MAX_TRIES
+        };
+        if i.fails >= MAX_TRIES || !saved {
+            i.fails = MAX_TRIES;
             i.locked_until = Some(now + self.lockout);
             self.save(&i, now);
             return Unlock::Locked { secs: self.lockout.as_secs() };
         }
-        self.save(&i, now);
         Unlock::Wrong { tries_left: MAX_TRIES - i.fails }
     }
 
@@ -236,6 +244,10 @@ mod tests {
         assert!(a.valid(&token, secs(t0, 118)), "each use extends the session");
         assert!(!a.valid(&token, secs(t0, 200)), "expired after 60 s without use");
         assert!(!a.valid("00000000000000000000000000000000", t0));
+        // a wrong PIN from somewhere else must not log a live session out
+        let Unlock::Ok(live) = a.unlock("12345678", secs(t0, 250)) else { panic!() };
+        assert!(matches!(a.unlock("00000000", secs(t0, 251)), Unlock::Wrong { .. }));
+        assert!(a.valid(&live, secs(t0, 252)), "the session survives a wrong PIN");
         let Unlock::Ok(t2) = a.unlock("12345678", secs(t0, 300)) else { panic!() };
         assert_ne!(t2, token);
         a.lock();

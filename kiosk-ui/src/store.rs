@@ -309,7 +309,7 @@ const SESSION_SECS: f64 = 60.0;
 impl Store {
     pub fn new() -> Self {
         let (tx, rx) = mpsc::channel();
-        let sock = std::env::var_os("KIOSKD_SOCK").map(PathBuf::from).unwrap_or_else(|| "/run/kioskd.sock".into());
+        let sock = std::env::var_os("KIOSKD_SOCK").map(PathBuf::from).unwrap_or_else(|| "/run/kioskd/kioskd.sock".into());
         Store {
             client: Client { sock, tx, wake: make_wake() },
             rx,
@@ -728,7 +728,17 @@ pub(crate) fn initial_tile(p: &egui::Painter, sc: Sc, ib: Rect, id: &str, name: 
 }
 
 fn load_icon(ctx: &egui::Context, app: &InstalledApp) -> Option<TextureHandle> {
-    let bytes = std::fs::read(app.icon.as_ref()?).ok()?;
+    let path = app.icon.as_ref()?;
+    // kioskd checks icons when it installs them; this is the second line of defence,
+    // because a decoder crash here would crash-loop the kiosk
+    if std::fs::metadata(path).ok()?.len() > 256 << 10 {
+        return None;
+    }
+    let bytes = std::fs::read(path).ok()?;
+    let (w, h) = image::ImageReader::new(std::io::Cursor::new(&bytes)).with_guessed_format().ok()?.into_dimensions().ok()?;
+    if w > 512 || h > 512 {
+        return None;
+    }
     let img = image::load_from_memory(&bytes).ok()?.to_rgba8();
     let size = [img.width() as usize, img.height() as usize];
     Some(ctx.load_texture(format!("app-icon-{}", app.id), egui::ColorImage::from_rgba_unmultiplied(size, img.as_raw()), egui::TextureOptions::LINEAR))

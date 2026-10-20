@@ -23,16 +23,24 @@ WorkingDirectory=/data/app
 # kioskd writes a drop-in that sets the real program, arguments and permissions
 ExecStart=/bin/false
 # kiosk.service counts every start toward its own crash-loop reboot limit;
-# clearing it here keeps normal hand-backs from adding up to a reboot
-ExecStopPost=+/usr/bin/systemctl reset-failed kiosk.service
+# clearing it here keeps normal hand-backs from adding up to a reboot. This
+# runs as root outside the sandbox but still gets the unit's Environment=, which
+# a package controls (LD_PRELOAD!), so it starts from an empty environment.
+ExecStopPost=+/usr/bin/env -i /usr/bin/systemctl reset-failed kiosk.service
 Restart=on-failure
 RestartSec=2
+# a runaway app must not starve kiosk-ui and kioskd: fewer tasks, less CPU, first to be OOM-killed
+TasksMax=128
+CPUWeight=50
+OOMScoreAdjust=500
 
 # the app sees only its own files (read-only) and its own state, at the
 # /data/app path kiosk apps use
 TemporaryFileSystem=/data:ro
-# an app can neither talk to kioskd (the PIN checks and installs) nor read kiosk.conf
-InaccessiblePaths=/boot /run/kioskd.sock
+# an app can neither talk to kioskd (the PIN checks and installs) nor read kiosk.conf.
+# The socket sits in a directory: hiding a single socket file stops working the
+# moment kioskd restarts and replaces it
+InaccessiblePaths=/boot /run/kioskd
 BindReadOnlyPaths=/data/store/apps/%i
 BindPaths=/data/store/data/%i:/data/app
 NoNewPrivileges=yes

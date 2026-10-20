@@ -158,6 +158,13 @@ pub fn install_package(p: &Paths, file: &Path, running: &[String], expected: Opt
         bail!("entry {} is not an executable file", m.entry);
     }
 
+    if let Some(icon) = &m.icon
+        && let Err(e) = kpkg::check_icon(&tmp.join(icon))
+    {
+        let _ = fs::remove_dir_all(&tmp);
+        return Err(e.context("the package's icon"));
+    }
+
     fs::rename(&tmp, &dest)?;
     sync_dir(&app)?;
     swap_link(&app.join("current"), &m.version)?;
@@ -479,5 +486,32 @@ mod tests {
         assert_eq!(e.current("t.app").as_deref(), Some("1.0.0"));
         assert_eq!(rollback(&e.p, "t.app", &[], false).unwrap(), ("1.0.0".into(), "2.0.0".into()), "and forward again");
         assert!(crate::state::read(&e.p.store).pending.is_empty());
+    }
+
+    #[test]
+    fn a_package_with_a_hostile_icon_is_not_installed() {
+        let e = Env::new("icon");
+        // an archive that never went through `kpkg build`: the icon claims to be huge
+        let out = e.root.join("media/bad.kpkg");
+        let mut tar = tar::Builder::new(zstd::Encoder::new(fs::File::create(&out).unwrap(), 1).unwrap());
+        let manifest = "id='t.app'\nversion='1.0.0'\nname='T'\nentry='bin/run'\nicon='icon.png'\n";
+        let mut add = |name: &str, body: &[u8], mode: u32| {
+            let mut h = tar::Header::new_gnu();
+            h.set_size(body.len() as u64);
+            h.set_mode(mode);
+            tar.append_data(&mut h, name, body).unwrap();
+        };
+        add("manifest.toml", manifest.as_bytes(), 0o644);
+        add("bin/run", b"#!/bin/sh\n", 0o755);
+        let mut png = vec![0x89, b'P', b'N', b'G', 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13];
+        png.extend(b"IHDR");
+        png.extend(40000u32.to_be_bytes());
+        png.extend(40000u32.to_be_bytes());
+        add("icon.png", &png, 0o644);
+        tar.into_inner().unwrap().finish().unwrap();
+
+        let err = install(&e.p, out.to_str().unwrap(), &[]).unwrap_err();
+        assert!(format!("{err:#}").contains("icon"), "{err:#}");
+        assert!(installed(&e.p).is_empty() && !e.p.apps().join("t.app/1.0.0").exists(), "nothing is left behind");
     }
 }

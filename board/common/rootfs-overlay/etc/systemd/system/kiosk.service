@@ -20,6 +20,7 @@ ExecStartPre=+/bin/sh -c 'mkdir -p /data/app && chown kiosk:kiosk /data/app && c
 ExecStart=/usr/libexec/kiosk/launch
 Restart=always
 RestartSec=2
+OOMScoreAdjust=-500
 
 # hardening: the app can only write to its own data directory
 NoNewPrivileges=yes

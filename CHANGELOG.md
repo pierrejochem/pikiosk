@@ -22,7 +22,11 @@ Raspberry Pi 4 and Pi 5, and apps.
 - The tab bar has five tabs; Apps is second.
 - The touch Home gesture reads the panel's multitouch tracking id: the Waveshare panel sends no `BTN_TOUCH`.
 
+**Security**
+- Reviewed before release; see docs/app-store.md. Fixed: package-controlled environment variables reaching a root command, the socket hiding that broke when `kioskd` restarted, unbounded socket requests, hostile icons, store downgrades, and a wrong PIN ending a live admin session.
+
 **Known limits**
+- An app can block the Home gesture by grabbing the touch device, and there is no memory or disk cap for apps (the kernel's memory cgroup is off).
 - The store's signing keys live on the maintainer's machine; the root key should be moved offline. Rotating keys means publishing a new root and, for devices already deployed, a new image.
 - No installs from cached metadata while offline, no signed packages from USB sticks, and `min_os` is not enforced yet.
 

@@ -1,6 +1,6 @@
 //! The control socket: one JSON request per line, one JSON reply per line.
 
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, Read, Write};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -51,7 +51,7 @@ impl Reply {
 }
 
 pub fn sock_path() -> PathBuf {
-    std::env::var_os("KIOSKD_SOCK").map(PathBuf::from).unwrap_or_else(|| "/run/kioskd.sock".into())
+    std::env::var_os("KIOSKD_SOCK").map(PathBuf::from).unwrap_or_else(|| "/run/kioskd/kioskd.sock".into())
 }
 
 /// Installing, updating and removing need the admin: root on the device (an SSH
@@ -140,14 +140,54 @@ fn peer_uid(stream: &UnixStream) -> Option<u32> {
     (r == 0).then_some(cred.uid)
 }
 
+/// Reads one request line: at most 4 KiB and 10 s in all, so a client that dribbles
+/// bytes cannot hold a thread (or memory) in a root process.
+fn read_request(mut stream: &UnixStream) -> Result<String> {
+    stream.set_read_timeout(Some(Duration::from_secs(1)))?;
+    let start = Instant::now();
+    let mut buf = Vec::new();
+    let mut chunk = [0u8; 512];
+    loop {
+        if start.elapsed() > Duration::from_secs(10) {
+            anyhow::bail!("request took too long");
+        }
+        match stream.read(&mut chunk) {
+            Ok(0) => break,
+            Ok(n) => {
+                buf.extend_from_slice(&chunk[..n]);
+                if let Some(i) = buf.iter().position(|b| *b == b'\n') {
+                    buf.truncate(i);
+                    break;
+                }
+                if buf.len() > 4096 {
+                    anyhow::bail!("request is too long");
+                }
+            }
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut | std::io::ErrorKind::Interrupted) => {}
+            Err(e) => return Err(e.into()),
+        }
+    }
+    Ok(String::from_utf8(buf)?)
+}
+
 fn serve(stream: UnixStream) -> Result<()> {
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    let mut line = String::new();
-    BufReader::new(&stream).read_line(&mut line)?;
+    let line = read_request(&stream)?;
     let reply = handle(&line, peer_uid(&stream) == Some(0));
     let mut out = &stream;
     writeln!(out, "{}", serde_json::to_string(&reply)?)?;
     Ok(())
+}
+
+/// Connections being served; more than MAX_CONNECTIONS are dropped.
+static ACTIVE: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+const MAX_CONNECTIONS: usize = 16;
+
+struct Slot;
+
+impl Drop for Slot {
+    fn drop(&mut self) {
+        ACTIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+    }
 }
 
 /// Lets the `kiosk` group (kiosk-ui) use the socket.
@@ -189,7 +229,13 @@ pub fn run() -> Result<()> {
         match stream {
             // a download must not block the next request (kiosk-ui asks for the overview meanwhile)
             Ok(s) => {
+                if ACTIVE.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= MAX_CONNECTIONS {
+                    ACTIVE.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+                    log::warn!("too many connections, dropping one");
+                    continue;
+                }
                 std::thread::spawn(move || {
+                    let _slot = Slot;
                     if let Err(e) = serve(s) {
                         log::warn!("connection: {e:#}");
                     }
@@ -214,6 +260,20 @@ pub fn request(path: &Path, request: &str) -> Result<Reply> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_request_line_is_bounded() {
+        let pair = || UnixStream::pair().unwrap();
+        let (mut a, b) = pair();
+        a.write_all(b"{\"cmd\":\"list\"}\nrest").unwrap();
+        assert_eq!(read_request(&b).unwrap(), r#"{"cmd":"list"}"#);
+        let (mut a, b) = pair();
+        a.write_all(&vec![b'x'; 5000]).unwrap();
+        assert!(read_request(&b).unwrap_err().to_string().contains("too long"), "no newline in 5000 bytes");
+        let (a, b) = pair();
+        drop(a);
+        assert_eq!(read_request(&b).unwrap(), "", "a client that closes without sending");
+    }
 
     #[test]
     fn requests_parse_and_bad_ones_are_refused() {

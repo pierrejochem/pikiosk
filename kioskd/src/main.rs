@@ -1,6 +1,6 @@
 //! kioskd: root daemon that starts store apps and brings kiosk-ui back.
 //!
-//!   kioskd daemon          serve /run/kioskd.sock and watch for the Home gesture
+//!   kioskd daemon          serve /run/kioskd/kioskd.sock and watch for the Home gesture
 //!   kioskd launch <id>     ask the daemon to start an installed app
 //!   kioskd stop            ask the daemon to stop the running app
 //!   kioskd install <file>  install a .kpkg from an install directory
