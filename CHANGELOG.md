@@ -23,7 +23,7 @@ Raspberry Pi 4 and Pi 5, and apps.
 - The touch Home gesture reads the panel's multitouch tracking id: the Waveshare panel sends no `BTN_TOUCH`.
 
 **Known limits**
-- The trust anchor in the image (`package/kioskd/root.json`) is a development root. Run the key ceremony in pikiosk-apps and rebuild before publishing to real devices.
+- The store's signing keys live on the maintainer's machine; the root key should be moved offline. Rotating keys means publishing a new root and, for devices already deployed, a new image.
 - No installs from cached metadata while offline, no signed packages from USB sticks, and `min_os` is not enforced yet.
 
 ## 0.1.0

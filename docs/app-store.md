@@ -135,7 +135,7 @@ No server to run at first: a TUF repository is static files, so GitHub Pages (or
 5. A scheduled workflow re-signs `timestamp.json` daily so devices never see it expire.
 6. Promote to `stable` with a manual workflow run, which re-signs the packages of `beta` as the `stable` channel.
 
-**Phase 5 status.** Built and tested: the TUF client in `kioskd` (signature, expiry, rollback, length and hash checks, NTP gate), `kpkg catalog`, the publish scripts and workflow in `pikiosk-apps`. Not built yet: installing from the cached metadata while offline, signed packages from local media (an offline repository mirror), the `min_os` check, and the `STORE_PIN`. The `root.json` in the image is a development root until the production key ceremony.
+**Phase 5 status.** Built and tested: the TUF client in `kioskd` (signature, expiry, rollback, length and hash checks, NTP gate), `kpkg catalog`, the publish scripts and workflow in `pikiosk-apps`. Not built yet: installing from the cached metadata while offline, signed packages from local media (an offline repository mirror), the `min_os` check, and the `STORE_PIN`. The key ceremony has been run: the `root.json` in the image is the production trust anchor (one Ed25519 key per role, threshold 1, valid for five years).
 
 **Device config:** new whitelisted keys in `apply-config` and `kiosk.conf`: `STORE_URL=` (empty = store off, the default), `STORE_CHANNEL=stable`, `STORE_PIN=`, `STORE_PIN_LOCKOUT=300` (seconds after 3 wrong PINs), `KIOSK_HOME_GESTURE=yes`.
 

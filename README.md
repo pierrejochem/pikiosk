@@ -218,9 +218,7 @@ cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg   # lints manifest.t
 cargo run --release -p kpkg -- inspect my-app.kpkg
 ```
 
-> The trust anchor in this repository (`package/kioskd/root.json`) is a **development root**: its
-> private keys are on the maintainer's machine. Do not publish to real devices before running the key
-> ceremony from pikiosk-apps and building a new image with the new `root.json`.
+> The trust anchor in this repository (`package/kioskd/root.json`) lists the public halves of the store's four signing keys. Devices trust exactly this file, so changing it means a new image. The private keys are not in any repository.
 
 ## Running a different app
 
