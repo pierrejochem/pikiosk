@@ -1,4 +1,9 @@
-<p align="center"><img src="media/mark.svg" width="96" alt="pikiosk logo"></p>
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="media/logo-dark.svg">
+    <img src="media/logo.svg" width="340" alt="pikiosk">
+  </picture>
+</p>
 
 # pikiosk: Raspberry Pi kiosk OS with a Rust touchscreen UI
 
