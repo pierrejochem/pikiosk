@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 256" role="img" aria-label="pikiosk">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#2a9bff"/><stop offset="1" stop-color="#0a4fd6"/></linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".34"/><stop offset="1" stop-color="#fff" stop-opacity=".08"/></linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="58" fill="url(#bg)"/>
+  <rect x="36" y="40" width="184" height="148" rx="26" fill="url(#glass)" stroke="#fff" stroke-opacity=".55" stroke-width="3"/>
+  <path d="M72 88h112M104 88v66c0 10 6 16 16 16M152 88v50c0 14 4 32 20 32" fill="none" stroke="#fff" stroke-width="16" stroke-linecap="round" stroke-linejoin="round"/>
+  <circle cx="128" cy="212" r="7" fill="#34c759"/>
+  <text x="292" y="162" font-family="Inter, 'SF Pro Display', 'Helvetica Neue', Arial, sans-serif" font-size="112" font-weight="700" letter-spacing="-3" fill="#0e1a2b">pi<tspan fill="#0a84ff">kiosk</tspan></text>
+</svg>

@@ -1,3 +1,5 @@
+<p align="center"><img src="site/img/logo/mark.svg" width="96" alt="pikiosk logo"></p>
+
 # pikiosk: Raspberry Pi kiosk OS with a Rust touchscreen UI
 
 [![Latest release](https://img.shields.io/github/v/release/pierrejochem/pikiosk)](https://github.com/pierrejochem/pikiosk/releases/latest)

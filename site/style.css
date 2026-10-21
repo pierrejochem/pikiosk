@@ -72,12 +72,12 @@ section { padding: clamp(48px, 8vw, 96px) 0 0; }
 .nav .glass { display: flex; align-items: center; gap: 6px; padding: 8px 10px 8px 16px; border-radius: 999px; }
 .brand { font-weight: 700; letter-spacing: -.02em; color: var(--text); display: flex; align-items: center; gap: 9px; margin-right: auto; }
 .brand:hover { text-decoration: none; }
-.brand b { display: inline-grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; background: linear-gradient(135deg, var(--accent), var(--c1)); font-size: .8rem; }
+.brand img { width: 26px; height: 26px; border-radius: 8px; }
 .nav a.link { color: var(--muted); padding: 7px 13px; border-radius: 999px; font-size: .93rem; }
 .nav a.link:hover { color: var(--text); background: var(--glass-strong); text-decoration: none; }
 @media (max-width: 860px) { .nav a.link.opt { display: none; } }
 .nav a.link { white-space: nowrap; }
-@media (max-width: 560px) { .nav .glass { padding-left: 12px; gap: 2px; } .nav a.link { padding: 7px 8px; font-size: .84rem; } .brand b { display: none; } }
+@media (max-width: 560px) { .nav .glass { padding-left: 12px; gap: 2px; } .nav a.link { padding: 7px 8px; font-size: .84rem; } .brand img { display: none; } }
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px;
