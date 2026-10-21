@@ -4,8 +4,8 @@
 [![CI](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml/badge.svg)](https://github.com/pierrejochem/pikiosk/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/github/license/pierrejochem/pikiosk)](LICENSE)
 
-
 **Website: [pierrejochem.github.io/pikiosk](https://pierrejochem.github.io/pikiosk/)**
+
 A minimal, read-only kiosk OS for the **Raspberry Pi 3B, 4 and 5 (64-bit)**, built with Buildroot 2026.08.
 It boots straight into one fullscreen native application. There is no login prompt on the screen,
 on the serial port or anywhere else, and no desktop.
