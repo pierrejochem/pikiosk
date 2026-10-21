@@ -1,5 +1,5 @@
 # Builds the complete SD card images with Buildroot, one job per board
-# (rpi3, rpi4, rpi5; 1.5-2 h each without caches). The rpi3 job also builds the
+# (rpi3, rpi4, rpi5; 1.5-2 h each without caches, less with the ccache). The rpi3 job also builds the
 # SDK for app packages (see docs/app-store.md).
 # Runs for version tags, attaching the image to that tag's release, and on
 # demand from the Actions tab, keeping the image as a workflow artifact.
@@ -43,6 +43,18 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             bc binutils build-essential bzip2 cmake cpio file git libncurses-dev patch perl python3 rsync unzip wget xz-utils
 
+      # compiler output (kernel, Mesa, host tools): a rebuild of the same sources
+      # takes minutes instead of hours. Buildroot's ccache (BR2_CCACHE) keeps it in
+      # ~/.buildroot-ccache. Capped so the three boards fit the 10 GB repository
+      # cache. The key is new on every run, so each run saves what it added.
+      - name: Cache compiler output
+        uses: actions/cache@v4
+        with:
+          path: ~/.buildroot-ccache
+          key: br-ccache-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-${{ github.run_id }}
+          restore-keys: |
+            br-ccache-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-
+
       # source tarballs and Rust crates; the build itself is not cached
       - name: Cache downloads
         uses: actions/cache@v4
@@ -56,12 +68,14 @@ jobs:
       - name: Build
         run: |
           export BR2_DL_DIR="$HOME/br-dl"
+          export CCACHE_MAXSIZE=2500M
           git clone --depth 1 -b "$BUILDROOT_VERSION" https://gitlab.com/buildroot.org/buildroot.git "$RUNNER_TEMP/buildroot"
           cd "$RUNNER_TEMP/buildroot"
           make BR2_EXTERNAL="$GITHUB_WORKSPACE" O="$RUNNER_TEMP/out" pikiosk_${{ matrix.board }}_defconfig
           make O="$RUNNER_TEMP/out"
           # the toolchain and sysroot app packages are built against
           if [ "${{ matrix.board }}" = rpi3 ]; then make O="$RUNNER_TEMP/out" sdk; fi
+          make O="$RUNNER_TEMP/out" ccache-stats || true
 
       - name: Compress
         id: pack

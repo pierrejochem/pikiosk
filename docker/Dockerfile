@@ -10,9 +10,11 @@ RUN apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-ins
 
 ENV LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8
 
-RUN useradd -m -u 1000 builder && mkdir -p /work && chown builder:builder /work
+RUN useradd -m -u 1000 builder && mkdir -p /work /home/builder/.buildroot-ccache \
+    && chown builder:builder /work /home/builder/.buildroot-ccache
 USER builder
 WORKDIR /work
 # a named volume mounted here inherits builder ownership on first use and
-# keeps sources, ccache and build output on a case-sensitive filesystem
+# keeps sources and build output on a case-sensitive filesystem; build.sh also
+# mounts a volume on ~/.buildroot-ccache, so compiler output survives a clean
 VOLUME /work

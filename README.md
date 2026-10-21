@@ -51,6 +51,8 @@ Flash `out/sdcard.img` with Raspberry Pi Imager ("Use custom") or `dd`.
 
 Other commands: `./build.sh app`, `./build.sh menuconfig`, `./build.sh savedefconfig`, `./build.sh shell`, `./build.sh clean`.
 
+Repeat builds are incremental: the build volume keeps the toolchain, kernel and Mesa, a second volume (`pikiosk-ccache`) keeps compiler output across `clean`, and every `./build.sh` rebuilds `kiosk-ui` and `kioskd` from the current source (about a minute when nothing else changed).
+
 Without Docker on a Linux machine:
 
 ```sh

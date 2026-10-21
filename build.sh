@@ -23,6 +23,7 @@ case "$BOARD" in
 esac
 IMAGE=pikiosk-builder
 VOLUME=pikiosk-work
+CCACHE_VOLUME=pikiosk-ccache
 HERE="$(cd "$(dirname "$0")" && pwd)"
 
 docker build -q -t "$IMAGE" "$HERE/docker" >/dev/null
@@ -31,6 +32,7 @@ run() {
 	docker run --rm -it \
 		-v "$HERE":/src:ro \
 		-v "$VOLUME":/work \
+		-v "$CCACHE_VOLUME":/home/builder/.buildroot-ccache \
 		-e BR2_DL_DIR=/work/dl \
 		"$IMAGE" bash -c "
 			set -e
@@ -46,7 +48,11 @@ run() {
 
 case "${1:-build}" in
 	build)
-		run "make O=$OUT"
+		# Buildroot only rebuilds a package from a local source tree (kiosk-ui, kioskd)
+		# when asked to; a plain make keeps the old binary. Do it on every build: cargo
+		# keeps its target directory, so an unchanged tree costs seconds. Everything else
+		# (toolchain, kernel, Mesa) stays cached.
+		run "if ls -d $OUT/build/kiosk-ui-* >/dev/null 2>&1; then make O=$OUT kiosk-ui-rebuild kioskd-rebuild; fi && make O=$OUT"
 		mkdir -p "$HERE/out"
 		docker run --rm -v "$VOLUME":/work -v "$HERE/out":/out "$IMAGE" \
 			cp $OUT/images/sdcard.img /out/$IMG
