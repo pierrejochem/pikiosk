@@ -84,7 +84,7 @@ fn main() -> anyhow::Result<()> {
     }
 
     #[cfg(target_os = "linux")]
-    return kiosk_kit::run(app);
+    return kiosk_kit::run(app.with_fade_in());
     #[cfg(not(target_os = "linux"))]
     unreachable!()
 }

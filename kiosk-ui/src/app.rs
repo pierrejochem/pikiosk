@@ -117,9 +117,20 @@ pub struct KioskApp {
     pub store: Store,
     /// the page of the previous frame, to refresh the Apps page when it opens
     shown_page: usize,
+    /// seconds of the fade-in from black so far; None when the fade is off
+    fade: Option<f32>,
 }
 
+/// Length of the fade-in from black after the app starts (or comes back from another app).
+const FADE_IN_SECS: f32 = 0.7;
+
 impl KioskApp {
+    /// Fades the first frames in from black, so coming back from an app is not a hard cut.
+    pub fn with_fade_in(mut self) -> Self {
+        self.fade = Some(0.0);
+        self
+    }
+
     pub fn new() -> Self {
         let data_dir = std::env::var_os("KIOSK_DATA").map(PathBuf::from);
         let settings_path = data_dir.as_ref().map(|d| d.join("kiosk-ui.conf"));
@@ -162,6 +173,7 @@ impl KioskApp {
             touch_request: None,
             store: Store::new(),
             shown_page: usize::MAX,
+            fade: None,
         }
     }
 
@@ -199,6 +211,25 @@ impl KioskApp {
     }
 
     pub fn ui(&mut self, ui: &mut Ui) {
+        self.ui_page(ui);
+        if let Some(t) = self.fade {
+            let ctx = ui.ctx();
+            let dt = ctx.input(|i| i.stable_dt).min(0.05);
+            let t = t + dt;
+            let k = (t / FADE_IN_SECS).clamp(0.0, 1.0);
+            let alpha = (1.0 - k).powi(2);
+            ctx.layer_painter(LayerId::new(Order::Tooltip, Id::new("fade-in")))
+                .rect_filled(ctx.content_rect(), 0.0, Color32::from_black_alpha((alpha * 255.0) as u8));
+            if k >= 1.0 {
+                self.fade = None;
+            } else {
+                self.fade = Some(t);
+                ctx.request_repaint();
+            }
+        }
+    }
+
+    fn ui_page(&mut self, ui: &mut Ui) {
         let ctx = ui.ctx().clone();
         let screen = ctx.content_rect();
         let l = Lay::new(screen);
