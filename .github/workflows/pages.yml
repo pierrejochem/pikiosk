@@ -1,11 +1,11 @@
-# Publishes site/ (the project page) with GitHub Pages whenever it changes on master.
+# Publishes site/ (the project page) and media/ (logos, served at /media/) with GitHub Pages whenever it changes on master.
 # The signed app store has its own site, in the pikiosk-apps repository.
 name: Pages
 
 on:
   push:
     branches: [master]
-    paths: ["site/**", ".github/workflows/pages.yml"]
+    paths: ["site/**", "media/**", ".github/workflows/pages.yml"]
   workflow_dispatch:
 
 permissions:
@@ -26,8 +26,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/configure-pages@v5
+      - name: Assemble the site
+        run: |
+          mkdir _site
+          cp -r site/. _site/
+          cp -r media _site/media
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: site
+          path: _site
       - id: deployment
         uses: actions/deploy-pages@v4
