@@ -1,0 +1,330 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>pikiosk</title>
+<meta name="description" content="A read-only kiosk OS for the Raspberry Pi 3B, 4 and 5 with a Rust liquid-glass touchscreen UI and a signed app store.">
+<meta property="og:title" content="pikiosk: Raspberry Pi kiosk OS">
+<meta property="og:description" content="Boots straight into one fullscreen native app. Read-only root, Rust + egui liquid-glass UI, signed app store.">
+<meta property="og:image" content="https://pierrejochem.github.io/pikiosk/img/social-preview.png">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a0f2c">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%230a84ff'/%3E%3Ctext x='16' y='22' font-size='18' font-family='sans-serif' font-weight='700' text-anchor='middle' fill='white'%3Ep%3C/text%3E%3C/svg%3E">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div class="field" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+
+<header class="wrap nav">
+  <div class="glass">
+    <a class="brand" href="#top"><b>p</b>pikiosk</a>
+    <a class="link opt" href="#features">Features</a>
+    <a class="link opt" href="#screens">Screens</a>
+    <a class="link" href="#start">Get started</a>
+    <a class="link" href="#store">App store</a>
+    <a class="link opt" href="#build">Build</a>
+    <a class="link opt" href="#security">Security</a>
+    <a class="link" href="https://github.com/pierrejochem/pikiosk">GitHub</a>
+  </div>
+</header>
+
+<main id="top">
+<div class="wrap">
+
+<!-- hero -->
+<div class="hero">
+  <div>
+    <span class="pill glass"><i></i>Version 0.2.0 · Pi 3B, 4 and 5</span>
+    <h1>A kiosk OS that <em>does one thing</em> on the screen.</h1>
+    <p class="lead">pikiosk boots a Raspberry Pi straight into one fullscreen native app. No login prompt, no desktop, a read-only root, and a touchscreen UI in Rust that draws liquid glass straight to the display.</p>
+    <div class="btns">
+      <a class="btn primary" href="#download">Download an image</a>
+      <a class="btn" href="#store">Meet the app store</a>
+    </div>
+  </div>
+  <figure class="glass shot">
+    <img src="img/kiosk-ui-home.png" width="800" height="480" alt="kiosk-ui home screen on a Raspberry Pi 3B with a Waveshare 5 inch touchscreen: clock, network, uptime, CPU temperature and memory tiles">
+    <figcaption>The home page on a Pi 3B with a Waveshare 5″ 800×480 panel.</figcaption>
+  </figure>
+</div>
+
+<!-- features -->
+<section id="features">
+  <div class="sec-head">
+    <div class="eyebrow">Why pikiosk</div>
+    <h2>Built to be switched on and left alone</h2>
+  </div>
+  <div class="grid g3">
+    <div class="glass card"><div class="ico">◧</div><h3>Read-only by design</h3><p>The OS partitions are never written. Pulling the power is safe. Logs live in RAM, and everything generated at boot goes to <code>/run</code>.</p></div>
+    <div class="glass card"><div class="ico">◐</div><h3>Liquid-glass UI</h3><p>kiosk-ui is Rust + egui. Glass panels refract, frost and light the wallpaper with a custom GLES 2 shader, through DRM/KMS with no X11 or Wayland.</p></div>
+    <div class="glass card"><div class="ico">⌁</div><h3>One image per board</h3><p>Buildroot 2026.08 images for the Raspberry Pi 3B, 4 and 5 (64-bit), flashed with Raspberry Pi Imager.</p></div>
+    <div class="glass card"><div class="ico">▦</div><h3>Signed app store</h3><p>Install and update apps from a TUF-signed store behind an admin PIN. A bad update rolls itself back. Off until you turn it on.</p></div>
+    <div class="glass card"><div class="ico">↻</div><h3>Self-healing</h3><p>Hardware watchdog, app auto-restart after 2 s, reboot on a crash loop, kernel panic auto-reboot.</p></div>
+    <div class="glass card"><div class="ico">✎</div><h3>Configure on the card</h3><p>Edit one file, <code>kiosk.conf</code>, on the FAT partition: hostname, WiFi, static IP, timezone, NTP, which app runs. No rebuild.</p></div>
+  </div>
+  <div class="tbl glass" style="margin-top:16px">
+    <table>
+      <tr><th>Part</th><th>What it is</th></tr>
+      <tr><td>Kernel</td><td>Raspberry Pi kernel 6.12 (arm64), KMS graphics</td></tr>
+      <tr><td>Init</td><td>systemd, read-only root filesystem</td></tr>
+      <tr><td>Graphics</td><td>DRM/KMS + Mesa (VC4 on the Pi 3B; VC4 and V3D on the Pi 4 and 5): EGL, GLES2, GBM</td></tr>
+      <tr><td>Network</td><td>Ethernet and onboard WiFi (DHCP or static), DNS, NTP, mDNS (<code>kiosk.local</code>)</td></tr>
+      <tr><td>Maintenance</td><td>SSH with public keys only, and off unless you provide a key</td></tr>
+      <tr><td>Display</td><td>Waveshare 5inch HDMI LCD (B): 800×480, USB touch, calibrated on the device</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- screens -->
+<section id="screens">
+  <div class="sec-head">
+    <div class="eyebrow">The UI</div>
+    <h2>Five pages, one swipe apart</h2>
+    <p class="lead">Switch with the floating tab bar, a horizontal swipe or the arrow keys. A compact layout is drawn for 800×480, a roomier one from 1280×720.</p>
+  </div>
+  <div class="gallery" tabindex="0" aria-label="Screenshots, scroll sideways">
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-home.png" width="800" height="480" alt="Home page"><figcaption><b>Home.</b> Clock, date, network address, uptime, CPU temperature, memory.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-apps.png" width="800" height="480" alt="Apps page with app tiles and the Store tile"><figcaption><b>Apps.</b> Installed apps as tiles, and the Store.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-network.png" width="800" height="480" alt="Network page"><figcaption><b>Network.</b> Interfaces, addresses, WiFi signal, gateway, DNS.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-controls.png" width="800" height="480" alt="Controls page with frost and refraction sliders and wallpaper themes"><figcaption><b>Controls.</b> Frost and refraction, wallpaper themes, animated wallpaper.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-settings.png" width="800" height="480" alt="Settings page with touch calibration"><figcaption><b>Settings.</b> On-device touch calibration, frame rate overlay, restart.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-photo.png" width="800" height="480" alt="Glass over a photo wallpaper"><figcaption><b>Your own wallpaper.</b> Copy <code>wallpaper.jpg</code> to the boot partition.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-1280x720.png" width="1280" height="720" alt="The layout at 1280 by 720"><figcaption><b>1280×720.</b> The roomier layout.</figcaption></figure>
+  </div>
+  <div class="grid g2" style="margin-top:8px">
+    <div class="glass card"><h3>Touch calibration that cannot lock you out</h3><p>Settings → Calibrate shows five crosses. kiosk-ui fits a calibration matrix to your taps, then shows a check screen. <b>Keep</b> saves it; without Keep, the old calibration returns after 15 s. It is stored in <code>/data/app</code> and survives re-flashing the root filesystem.</p></div>
+    <div class="glass card"><h3>Tuned for a resistive panel</h3><p>A fingertip wobbles up to 13 px on this panel, so a tap may move 20 px and still count. The animated wallpaper is capped at 30 fps on the Pi 3B; with animation off the screen redraws once a second.</p></div>
+  </div>
+</section>
+
+<!-- download / start -->
+<section id="download">
+  <div class="sec-head">
+    <div class="eyebrow">Download</div>
+    <h2>Pick your board</h2>
+    <p class="lead">Each release has one compressed image per board and the SDK for building apps. Raspberry Pi Imager flashes the image directly (“Use custom”).</p>
+  </div>
+  <div class="grid g3">
+    <div class="glass card"><h3>Raspberry Pi 3B</h3><p style="margin-bottom:14px">The tested board.</p><a class="btn primary" href="https://github.com/pierrejochem/pikiosk/releases/latest/download/pikiosk-v0.2.0-rpi3-sdcard.img.xz">rpi3 image</a></div>
+    <div class="glass card"><h3>Raspberry Pi 4</h3><p style="margin-bottom:14px">Built by CI, <span class="tag warn">not yet run on hardware</span></p><a class="btn" href="https://github.com/pierrejochem/pikiosk/releases/latest/download/pikiosk-v0.2.0-rpi4-sdcard.img.xz">rpi4 image</a></div>
+    <div class="glass card"><h3>Raspberry Pi 5</h3><p style="margin-bottom:14px">Built by CI, <span class="tag warn">not yet run on hardware</span></p><a class="btn" href="https://github.com/pierrejochem/pikiosk/releases/latest/download/pikiosk-v0.2.0-rpi5-sdcard.img.xz">rpi5 image</a></div>
+  </div>
+  <p class="muted" style="margin-top:14px">All files, checksums and the app SDK are on the <a href="https://github.com/pierrejochem/pikiosk/releases/latest">latest release</a>. The Pi 4 and 5 need a micro-HDMI adapter cable for the Waveshare panel.</p>
+</section>
+
+<section id="start">
+  <div class="sec-head">
+    <div class="eyebrow">Get started</div>
+    <h2>From download to kiosk in five minutes</h2>
+  </div>
+  <div class="steps">
+    <div class="glass step"><h3>Flash the image</h3><p>Open Raspberry Pi Imager, choose “Use custom”, pick the <code>.img.xz</code>, write it to an SD card. The data partition grows to fill the card on first boot.</p></div>
+    <div class="glass step"><h3>Edit <code>kiosk.conf</code></h3><p>The card’s FAT partition <code>KIOSKBOOT</code> shows up on your computer. Set hostname, timezone and WiFi. Changes apply on the next boot.</p>
+      <div class="code-wrap"><pre><span class="c"># KIOSKBOOT/kiosk.conf</span>
+HOSTNAME=kiosk
+TIMEZONE=Europe/Amsterdam
+WIFI_COUNTRY=NL
+WIFI_SSID=MyNetwork
+WIFI_PSK=correct-horse-battery</pre></div></div>
+    <div class="glass step"><h3>Boot it</h3><p>Put the card in the Pi and power it on. kiosk-ui appears on the display. Calibrate the touch panel under Settings if the corners are hard to hit.</p></div>
+    <div class="glass step"><h3>Optional: SSH</h3><p>Put your public key in a file named <code>authorized_keys</code> on the same partition. Without it, SSH does not run.</p>
+      <div class="code-wrap"><pre>ssh root@kiosk.local
+journalctl -u kiosk -f</pre></div></div>
+  </div>
+</section>
+
+<!-- app store -->
+<section id="store">
+  <div class="sec-head">
+    <div class="eyebrow">Apps</div>
+    <h2>A signed app store for a kiosk</h2>
+    <p class="lead">Apps are <code>.kpkg</code> packages built on <code>kiosk-kit</code>, the crate kiosk-ui itself uses for display, touch and glass. One app owns the screen at a time. Hold the top-right corner for 3 seconds to leave an app, even a hung one.</p>
+  </div>
+  <div class="grid g2">
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-catalog.png" width="800" height="480" alt="The Store catalog with category tabs and app cards"><figcaption>The catalog, with categories and a Check now button.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-detail.png" width="800" height="480" alt="An app's detail page with install progress"><figcaption>An app’s detail page, with install progress.</figcaption></figure>
+  </div>
+
+  <div class="grid g3" style="margin-top:16px">
+    <div class="glass card"><h3>Admin PIN</h3><p>Installing, updating and removing need the PIN from <code>STORE_PIN</code> (4 to 8 digits), entered on a glass keypad. kioskd checks it; the UI only holds a token that ends 60 s after the last touch. Three wrong PINs lock it, and pulling the power does not reset that.</p></div>
+    <div class="glass card"><h3>Atomic updates</h3><p>A new version replaces the old in one step. Pull the power mid-install and the previous version still runs. App data in <code>/data/store/data/&lt;id&gt;</code> survives updates and re-flashing.</p></div>
+    <div class="glass card"><h3>Offline once installed</h3><p>Installed apps never need the network. The store is checked for updates only after NTP has set the clock, because signatures expire.</p></div>
+  </div>
+
+  <h3 style="margin:34px 0 14px">Health gate and rollback</h3>
+  <div class="flow">
+    <div class="glass"><b>1. Install</b><span>Signature, size and hash are checked first.</span></div><i>→</i>
+    <div class="glass"><b>2. Switch</b><span>The new version becomes <code>current</code>, the old one <code>previous</code>.</span></div><i>→</i>
+    <div class="glass"><b>3. 30 s gate</b><span>The first run must stay up for 30 seconds.</span></div><i>→</i>
+    <div class="glass"><b>4. Roll back</b><span>On a crash the old version returns, the bad one is deleted and blocked, and a notice is shown.</span></div>
+  </div>
+  <figure class="glass shot" style="margin-top:16px;max-width:560px"><img loading="lazy" src="img/kiosk-ui-rollback.png" width="800" height="480" alt="The rollback notice dialog"><figcaption>The notice after an automatic rollback.</figcaption></figure>
+
+  <h3 style="margin:34px 0 14px">Turn the store on</h3>
+  <p class="muted">Both ways are off by default: with an empty <code>STORE_URL</code> and no <code>STORE_PIN</code>, the Store tile is hidden and nobody can install anything.</p>
+  <div class="code-wrap"><pre><span class="c"># KIOSKBOOT/kiosk.conf</span>
+STORE_URL=https://pierrejochem.github.io/pikiosk-apps
+STORE_CHANNEL=stable
+STORE_PIN=482913</pre></div>
+  <div class="tbl glass" style="margin-top:16px">
+    <table>
+      <tr><th>Key</th><th>Default</th><th>Meaning</th></tr>
+      <tr><td><code>STORE_URL</code></td><td>empty (off)</td><td>Base URL of the store. The board reads <code>&lt;url&gt;/&lt;channel&gt;/metadata</code> and <code>/targets</code>.</td></tr>
+      <tr><td><code>STORE_CHANNEL</code></td><td><code>stable</code></td><td><code>stable</code> or <code>beta</code>.</td></tr>
+      <tr><td><code>STORE_PIN</code></td><td>empty</td><td>4 to 8 digits. Without it nobody is admin.</td></tr>
+      <tr><td><code>STORE_PIN_LOCKOUT</code></td><td><code>300</code></td><td>Seconds every PIN is refused after 3 wrong ones.</td></tr>
+      <tr><td><code>STORE_ALLOW_UNSIGNED</code></td><td><code>no</code></td><td>Install unsigned <code>.kpkg</code> files from <code>/boot/apps</code>. For development only.</td></tr>
+      <tr><td><code>KIOSK_HOME_GESTURE</code></td><td><code>yes</code></td><td>The 3 s top-right hold that leaves an app.</td></tr>
+    </table>
+  </div>
+  <figure class="glass shot" style="margin-top:16px;max-width:560px"><img loading="lazy" src="img/kiosk-ui-pin.png" width="800" height="480" alt="The admin PIN keypad"><figcaption>The admin PIN keypad.</figcaption></figure>
+
+  <h3 style="margin:34px 0 14px">Publish your own app</h3>
+  <p class="muted">An app is a Rust crate that implements <code>kiosk_kit::App</code> and calls <code>kiosk_kit::run</code>, plus a <code>manifest.toml</code> and a 128×128 PNG icon. Start from <code>apps/hello</code> in the <a href="https://github.com/pierrejochem/pikiosk-apps">pikiosk-apps</a> repository, which holds the publish workflow and the key ceremony. Each release attaches an SDK, so one binary runs on all three boards.</p>
+  <div class="code-wrap"><pre><span class="c"># manifest.toml</span>
+id = "de.example.hello"
+version = "1.0.0"
+name = "Hello"
+entry = "bin/hello"
+icon = "assets/icon.png"
+category = "Demo"
+boards = ["rpi3", "rpi4", "rpi5"]
+
+<span class="c"># build and check the package</span>
+cargo run --release -p kpkg -- build my-app/ -o my-app.kpkg
+cargo run --release -p kpkg -- inspect my-app.kpkg
+
+<span class="c"># publish: tag the app, the workflow signs it into the beta channel</span>
+git tag hello-v1.0.0 &amp;&amp; git push origin hello-v1.0.0</pre></div>
+</section>
+
+<!-- security -->
+<section id="security">
+  <div class="sec-head">
+    <div class="eyebrow">Security</div>
+    <h2>What protects the device, and where it stops</h2>
+  </div>
+  <div class="grid g3">
+    <div class="glass card"><h3>Signed with TUF</h3><p>Every package is checked for signature, expiry, rollback and hash. The trust anchor <code>root.json</code> is baked into the image, so changing it means a new image. A copy of an old store, or a clock turned back, is refused.</p></div>
+    <div class="glass card"><h3>No logins</h3><p>No login prompt on the screen, the serial port or anywhere else. SSH takes public keys only and is off without an <code>authorized_keys</code> file.</p></div>
+    <div class="glass card"><h3>Apps run unprivileged</h3><p>Apps run as the <code>kiosk</code> account in a systemd sandbox with a read-only <code>/data</code> view, no access to <code>/boot</code> or the kioskd socket, and task, CPU and OOM limits. Package environment variables that could load code into root commands are refused.</p></div>
+  </div>
+  <div class="glass note" style="margin-top:16px"><b>Known limits.</b> An app can block the Home gesture by grabbing the touch device; recovery is a power cycle or SSH. There is no memory or disk cap for apps. Apps share a user with kiosk-ui. Anyone who can read the SD card can read the PIN in <code>kiosk.conf</code>. The design and the 0.2.0 security review are written up in <a href="https://github.com/pierrejochem/pikiosk/blob/master/docs/app-store.md">docs/app-store.md</a>.</div>
+</section>
+
+<!-- build -->
+<section id="build">
+  <div class="sec-head">
+    <div class="eyebrow">Build it yourself</div>
+    <h2>Docker on macOS or Linux</h2>
+    <p class="lead">The first build takes 1 to 1.5 hours. After that a rebuild with unchanged system code takes about a minute, because the toolchain, kernel and compiler output are cached.</p>
+  </div>
+  <div class="code-wrap"><pre>git clone https://github.com/pierrejochem/pikiosk
+cd pikiosk
+./build.sh                  <span class="c"># Pi 3B  -> out/sdcard.img</span>
+BOARD=rpi4 ./build.sh       <span class="c"># Pi 4   -> out/sdcard-rpi4.img</span>
+BOARD=rpi5 ./build.sh       <span class="c"># Pi 5   -> out/sdcard-rpi5.img</span>
+./build.sh app              <span class="c"># only kiosk-ui -> out/kiosk-ui</span></pre></div>
+  <div class="grid g2" style="margin-top:16px">
+    <div class="glass card"><h3>Try a changed UI without flashing</h3><p style="margin-bottom:12px">Build the app, copy it to <code>/data</code>, and point <code>kiosk.conf</code> at it.</p>
+      <div class="code-wrap"><pre>./build.sh app
+scp out/kiosk-ui root@kiosk.local:/data/app/
+<span class="c"># kiosk.conf:  APP=/data/app/kiosk-ui</span></pre></div></div>
+    <div class="glass card"><h3>Run a different app</h3><p style="margin-bottom:12px">Any aarch64 binary can be the kiosk app. Qt 6, SDL2 and flutter-pi come as build fragments.</p>
+      <div class="code-wrap"><pre>./build.sh with qt6
+./build.sh with sdl2
+./build.sh with flutter</pre></div></div>
+  </div>
+
+  <h3 style="margin:34px 0 14px">The SD card</h3>
+  <div class="tbl glass">
+    <table>
+      <tr><th>Partition</th><th>Type</th><th>Size</th><th>Holds</th></tr>
+      <tr><td>p1 · KIOSKBOOT</td><td>FAT32</td><td>64 MB</td><td>Firmware, kernel, <code>kiosk.conf</code>, <code>authorized_keys</code>. Mounted read-only on <code>/boot</code>.</td></tr>
+      <tr><td>p2 · kioskroot</td><td>ext4</td><td>256 MB</td><td>The OS. Mounted read-only on <code>/</code>.</td></tr>
+      <tr><td>p3 · kioskdata</td><td>ext4</td><td>the rest</td><td>SSH host keys, <code>/data/app</code>, installed apps. Mounted read-write on <code>/data</code>.</td></tr>
+    </table>
+  </div>
+
+  <h3 style="margin:34px 0 14px">The source</h3>
+  <div class="tbl glass">
+    <table>
+      <tr><th>Crate</th><th>Role</th></tr>
+      <tr><td><code>kiosk-kit</code></td><td>Display, touch and glass widgets as a library. What apps build on.</td></tr>
+      <tr><td><code>kiosk-ui</code></td><td>The kiosk app: the pages, the Apps page and the Store.</td></tr>
+      <tr><td><code>kioskd</code></td><td>Root daemon: launches apps, Home gesture, installs, PIN, health gate.</td></tr>
+      <tr><td><code>kpkg</code></td><td>The <code>.kpkg</code> format and tool: build, inspect, verify, catalog.</td></tr>
+    </table>
+  </div>
+</section>
+
+<!-- notes -->
+<section id="notes">
+  <div class="sec-head">
+    <div class="eyebrow">Good to know</div>
+    <h2>Notes and limits</h2>
+  </div>
+  <div class="grid g2">
+    <div class="glass card"><h3>No real-time clock</h3><p>The Pi 3B and 4 have no RTC, so the clock is right only after an NTP sync. The store checks for updates only after that. The Pi 5 has an RTC with an optional battery.</p></div>
+    <div class="glass card"><h3>WiFi</h3><p>WPA3-only networks do not work: the Pi 3B’s WiFi chip does not support SAE. WPA2 and WPA2/WPA3 mixed mode work.</p></div>
+    <div class="glass card"><h3>Pi 4 and Pi 5</h3><p>Their images are built by CI and have not been run on hardware yet. The Pi 3B is the tested board.</p></div>
+    <div class="glass card"><h3>Glass and layers</h3><p>Glass refracts the wallpaper, not other UI elements underneath it. egui has no backdrop capture.</p></div>
+  </div>
+</section>
+
+</div>
+</main>
+
+<footer class="wrap">
+  <div class="glass">
+    <span>pikiosk · MIT license · Buildroot, the Linux kernel and the other packages keep their own licenses.</span>
+    <nav>
+      <a href="https://github.com/pierrejochem/pikiosk">Source</a>
+      <a href="https://github.com/pierrejochem/pikiosk/releases">Releases</a>
+      <a href="https://github.com/pierrejochem/pikiosk/blob/master/CHANGELOG.md">Changelog</a>
+      <a href="https://github.com/pierrejochem/pikiosk-apps">pikiosk-apps</a>
+      <a href="https://github.com/pierrejochem/pikiosk/issues">Issues</a>
+    </nav>
+    <div class="themes glass" role="group" aria-label="Wallpaper theme">
+      <button type="button" data-t="aurora" aria-label="Aurora" title="Aurora" aria-pressed="true"></button>
+      <button type="button" data-t="sunset" aria-label="Sunset" title="Sunset" aria-pressed="false"></button>
+      <button type="button" data-t="ocean" aria-label="Ocean" title="Ocean" aria-pressed="false"></button>
+      <button type="button" data-t="graphite" aria-label="Graphite" title="Graphite" aria-pressed="false"></button>
+    </div>
+  </div>
+</footer>
+
+<script>
+(function () {
+  var root = document.documentElement, KEY = "pikiosk-theme";
+  function apply(t) {
+    if (t === "aurora") root.removeAttribute("data-theme"); else root.setAttribute("data-theme", t);
+    document.querySelectorAll(".themes button").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.t === t)); });
+  }
+  try { var saved = localStorage.getItem(KEY); if (saved) apply(saved); } catch (e) {}
+  document.querySelectorAll(".themes button").forEach(function (b) {
+    b.addEventListener("click", function () {
+      apply(b.dataset.t);
+      try { localStorage.setItem(KEY, b.dataset.t); } catch (e) {}
+    });
+  });
+  document.querySelectorAll(".code-wrap").forEach(function (w) {
+    var pre = w.querySelector("pre"); if (!pre) return;
+    var btn = document.createElement("button");
+    btn.type = "button"; btn.className = "copy"; btn.textContent = "Copy";
+    btn.addEventListener("click", function () {
+      var text = pre.innerText;
+      (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () {
+        btn.textContent = "Copied"; setTimeout(function () { btn.textContent = "Copy"; }, 1400);
+      }, function () {
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var s = getSelection(); s.removeAllRanges(); s.addRange(r);
+      });
+    });
+    w.appendChild(btn);
+  });
+})();
+</script>
+</body>
+</html>
