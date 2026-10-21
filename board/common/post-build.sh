@@ -30,6 +30,23 @@ ln -sfn /run/kiosk/ssh "$T/root/.ssh"
 rm -rf "$T/etc/dropbear"
 ln -sfn /data/ssh "$T/etc/dropbear"
 
+# ---- kernel modules: drop filesystems a kiosk never mounts ---------------------
+# The kernel is built with nearly everything as a module (about 100 MB, of which
+# the Pi loads 29). These file systems are 16 MB of the 256 MB root partition.
+# Kept: vfat, ext4 (built in), exfat, ntfs3, nfs, squashfs, overlayfs, erofs, isofs, udf, fuse.
+for kdir in "$T"/usr/lib/modules/*/; do
+	[ -d "$kdir/kernel/fs" ] || continue
+	for fs in 9p bcachefs btrfs cachefiles ceph dlm ecryptfs gfs2 hfs hfsplus jffs2 jfs \
+		  nfsd nilfs2 ocfs2 reiserfs smb ubifs xfs; do
+		rm -rf "$kdir/kernel/fs/$fs"
+	done
+	if [ -x "${HOST_DIR:-}/sbin/depmod" ]; then
+		"$HOST_DIR/sbin/depmod" -a -b "$T" "$(basename "$kdir")"
+	else
+		echo "post-build: warning: host depmod not found, modules.dep still lists the removed modules" >&2
+	fi
+done
+
 # ---- no local login, no consoles, no keyboard shortcuts ---------------------
 for unit in getty@.service serial-getty@.service autovt@.service \
 	    console-getty.service container-getty@.service \
