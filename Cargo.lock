@@ -1834,7 +1834,7 @@ checksum = "e2db585e1d738fc771bf08a151420d3ed193d9d895a36df7f6f8a9456b911ddc"
 
 [[package]]
 name = "kiosk-kit"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "drm",
@@ -1850,7 +1850,7 @@ dependencies = [
 
 [[package]]
 name = "kiosk-ui"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1874,7 +1874,7 @@ dependencies = [
 
 [[package]]
 name = "kioskd"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "aws-lc-rs",
@@ -1896,7 +1896,7 @@ dependencies = [
 
 [[package]]
 name = "kpkg"
-version = "0.2.0"
+version = "0.3.0"
 dependencies = [
  "anyhow",
  "serde",

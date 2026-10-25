@@ -1,11 +1,18 @@
 # Changelog
 
-## Unreleased
+## 0.3.0
+
+Settings sections and Wi-Fi from the touchscreen.
 
 **Settings**
 - Network and Controls moved into **Settings**, which now has four sections behind a segmented control: Display, Network, Touch and System. The tab bar has three tabs: Home, Apps, Settings. The Home Network tile opens Settings > Network. `kiosk-ui --page` takes `display`, `network`, `touch` or `system`.
 - **Wi-Fi from the touchscreen.** Settings > Network lists the networks in range. Joining one uses an on-screen keyboard and the admin PIN; saved networks can be reconnected or forgotten, and hidden networks can be added. Networks are saved in `/data/store/wifi.json` and merged into the WPA config at boot, so they survive reboots. `WIFI_SSID` in `kiosk.conf` is now optional: wpa_supplicant always runs, so the list works on an image with no WiFi configured.
 - `kioskd`: new requests `wifi_scan`, `wifi_status`, `wifi_connect` and `wifi_forget` (the last two need the admin PIN), and `kioskd wifi-conf`, which prints the saved networks as `wpa_supplicant.conf` blocks.
+- `kiosk-config.service` now waits for the `/data` mount, and `kioskd` gives `wpa_cli` a socket directory outside its private `/tmp`. Both were found by testing on a Pi 3B.
+
+**Known limits**
+- Tested on a Pi 3B: scanning, a wrong password, a right password and the merge after a reboot. Hidden networks, Change password and Forget are covered by unit tests only. The Pi 4 and Pi 5 images are still built by CI and not run on hardware.
+- A board with no WiFi chip would wait for `wlan0` on boot, because wpa_supplicant now always starts.
 
 ## 0.2.0
 

@@ -4,7 +4,7 @@
 #
 ################################################################################
 
-KIOSK_UI_VERSION = 0.2.0
+KIOSK_UI_VERSION = 0.3.0
 # the Cargo workspace root: kiosk-ui builds against kiosk-kit by path
 KIOSK_UI_SITE = $(BR2_EXTERNAL_PIKIOSK_PATH)
 KIOSK_UI_SITE_METHOD = local
