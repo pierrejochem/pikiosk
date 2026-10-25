@@ -146,7 +146,11 @@ cargo run --release --features desktop
 admin PIN and the brightness slider all work with the mouse. Only `wpa_cli` is replaced by a stand-in
 (`tools/emulator/wpa_cli`) with a few made-up networks, so nothing on your own network is touched. The admin PIN is `1234`,
 and the password `wrongwrong` is always refused. Everything lives in a temporary directory that is removed on exit.
-On Linux it needs the same packages as CI (`libudev-dev libinput-dev libgbm-dev libegl-dev`) plus a display.
+Only the emulator (and building kiosk-ui on your computer) needs these; the device image does not. On Linux it needs a display and development packages. On Ubuntu:
+
+```sh
+sudo apt install -y pkg-config libudev-dev libinput-dev libgbm-dev libdrm-dev libegl-dev
+```
 
 **Screenshots without a display** (Linux with Mesa, including on the Pi over SSH):
 
