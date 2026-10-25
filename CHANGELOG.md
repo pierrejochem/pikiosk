@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+**Development**
+- `tools/emulate.sh` runs kiosk-ui and the real `kioskd` in a desktop window, at 800×480 (the 5" panel) or any size (`tools/emulate.sh 1280x720`). Only `wpa_cli` is replaced, by `tools/emulator/wpa_cli` with made-up networks. Admin PIN `1234`; the password `wrongwrong` is refused.
+- `KIOSK_WINDOW=WxH` sets the size of the desktop window, and `KIOSKD_WIFI_TIMEOUT` the seconds `kioskd` waits for a Wi-Fi connection (default 25).
+
 ## 0.3.0
 
 Settings sections and Wi-Fi from the touchscreen.

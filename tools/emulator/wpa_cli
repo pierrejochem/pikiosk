@@ -1,0 +1,58 @@
+#!/usr/bin/env bash
+# A stand-in for wpa_cli for the emulator (tools/emulate.sh): a few made-up networks,
+# and a connection that succeeds unless the password is "wrongwrong". State is kept in
+# $EMU_WPA_DIR, so nothing on this machine's network is touched.
+set -u
+D=${EMU_WPA_DIR:?}
+mkdir -p "$D/net"
+args=("$@")
+# kioskd calls: wpa_cli [-s DIR] -i IFACE COMMAND ARGS...
+while [ "${args[0]:-}" = -s ] || [ "${args[0]:-}" = -i ]; do args=("${args[@]:2}"); done
+cmd=${args[0]:-}
+unhex() { printf "$(echo "$1" | sed 's/\(..\)/\\x\1/g')"; }
+bars() { echo $(( -90 + RANDOM % 6 )) ; }
+case "$cmd" in
+  scan) echo OK;;
+  scan_results)
+    printf 'bssid / frequency / signal level / flags / ssid\n'
+    printf 'aa:00:00:00:00:01\t2437\t%s\t[WPA2-PSK-CCMP][ESS]\tHome-5G\n' $(( -42 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:02\t5180\t%s\t[WPA2-PSK-CCMP][ESS]\tHome-5G\n' $(( -55 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:03\t2412\t%s\t[WPA2-PSK-CCMP][WPA3-SAE-CCMP][ESS]\tFRITZ!Box 7590\n' $(( -61 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:04\t2462\t%s\t[ESS]\tCafe Guest\n' $(( -70 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:05\t2437\t%s\t[WPA2-PSK-CCMP][ESS]\tOffice\n' $(( -74 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:06\t2412\t%s\t[WPA2-PSK-CCMP][ESS]\tNeighbour\n' $(( -80 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:07\t2462\t%s\t[WPA2-PSK-CCMP][ESS]\tWorkshop\n' $(( -84 - RANDOM % 4 ))
+    printf 'aa:00:00:00:00:08\t2437\t%s\t[WPA2-PSK-CCMP][ESS]\tGarage-AP\n' $(( -88 - RANDOM % 4 ))
+    ;;
+  status)
+    sel=$(cat "$D/selected" 2>/dev/null || true)
+    if [ -z "$sel" ]; then
+      printf 'wpa_state=SCANNING\n'
+    elif [ "$(cat "$D/net/$sel.psk" 2>/dev/null)" = wrongwrong ]; then
+      printf 'wpa_state=4WAY_HANDSHAKE\nssid=%s\n' "$(unhex "$(cat "$D/net/$sel.ssid")")"
+    else
+      printf 'wpa_state=COMPLETED\nssid=%s\nip_address=192.168.1.42\n' "$(unhex "$(cat "$D/net/$sel.ssid")")"
+    fi;;
+  list_networks)
+    printf 'network id / ssid / bssid / flags\n'
+    for f in "$D"/net/*.ssid; do
+      [ -e "$f" ] || continue
+      id=$(basename "$f" .ssid)
+      printf '%s\t%s\tany\t\n' "$id" "$(unhex "$(cat "$f")")"
+    done;;
+  add_network)
+    n=$(cat "$D/next" 2>/dev/null || echo 0); echo $((n + 1)) > "$D/next"; echo "$n";;
+  set_network)
+    id=${args[1]}; key=${args[2]}; val=${args[*]:3}
+    case "$key" in
+      ssid) echo "$val" > "$D/net/$id.ssid";;
+      psk) val=${val#\"}; echo "${val%\"}" > "$D/net/$id.psk";;
+    esac
+    echo OK;;
+  select_network) echo "${args[1]}" > "$D/selected"; echo OK;;
+  remove_network)
+    id=${args[1]}; rm -f "$D/net/$id".*
+    [ "$(cat "$D/selected" 2>/dev/null)" = "$id" ] && rm -f "$D/selected"
+    echo OK;;
+  enable_network|*) echo OK;;
+esac

@@ -141,6 +141,13 @@ cd kiosk-ui
 cargo run --release --features desktop
 ```
 
+**Device emulator:** `tools/emulate.sh` opens kiosk-ui in a window the size of the 5" panel (800×480; pass
+`1280x720` for the roomier layout) with the real `kioskd` behind it, so the Wi-Fi list, the on-screen keyboard, the
+admin PIN and the brightness slider all work with the mouse. Only `wpa_cli` is replaced by a stand-in
+(`tools/emulator/wpa_cli`) with a few made-up networks, so nothing on your own network is touched. The admin PIN is `1234`,
+and the password `wrongwrong` is always refused. Everything lives in a temporary directory that is removed on exit.
+On Linux it needs the same packages as CI (`libudev-dev libinput-dev libgbm-dev libegl-dev`) plus a display.
+
 **Screenshots without a display** (Linux with Mesa, including on the Pi over SSH):
 
 ```sh
@@ -167,10 +174,15 @@ kiosk-kit/src/widgets.rs   glass button, toggle, slider, segmented control, tab 
 kiosk-kit/src/calibrate.rs touch calibration: affine fit and the calibration screen
 kiosk-kit/src/kms.rs       DRM/KMS + GBM + EGL + libinput backend (prefers the DSI panel)
 kiosk-kit/src/lib.rs       the `App` trait and `run`: what an app needs to draw on the display
-kiosk-ui/src/app.rs        the four pages and settings
+kiosk-ui/src/app.rs        the three pages and the Settings sections
+kiosk-ui/src/wifi.rs       Settings > Network: the Wi-Fi list and its dialogs
+kiosk-ui/src/keyboard.rs   the on-screen keyboard
 kiosk-ui/src/backlight.rs  display brightness via /sys/class/backlight
 kiosk-ui/src/headless.rs   offscreen rendering, screenshots, UI test
 kiosk-ui/src/desktop.rs    eframe window for development
+kioskd/src/wifi.rs         Wi-Fi scan, join and forget through wpa_cli
+tools/emulate.sh           run kiosk-ui and kioskd in a window (the device emulator)
+tools/emulator/wpa_cli     a stand-in wpa_cli with made-up networks, for the emulator
 ```
 
 ## Apps and the app store

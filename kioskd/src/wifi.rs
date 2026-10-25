@@ -61,7 +61,7 @@ impl Wpa {
             program: var("KIOSKD_WPA_CLI").map(PathBuf::from).unwrap_or_else(|| "wpa_cli".into()),
             iface: var("KIOSKD_WIFI_IFACE").unwrap_or_else(|| "wlan0".into()),
             sockets: Some(var("KIOSKD_WPA_SOCKDIR").unwrap_or_else(|| "/run/kioskd".into())).filter(|d| !d.is_empty()).map(PathBuf::from),
-            timeout: Duration::from_secs(25),
+            timeout: Duration::from_secs(var("KIOSKD_WIFI_TIMEOUT").and_then(|v| v.parse().ok()).filter(|s| *s >= 1).unwrap_or(25)),
             scan_wait: Duration::from_secs(3),
         }
     }

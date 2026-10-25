@@ -113,7 +113,7 @@ Add one page, **Apps**, to kiosk-ui's floating tab bar (Home · Apps · Settings
 - Load icons once with the `image` crate kiosk-ui already uses and keep the GL textures; uploads are slow on VC4.
 - Before a launch, kiosk-ui saves settings and exits cleanly, so the handoff never looks like a crash.
 
-**Tests:** extend the existing offscreen UI tests in `headless.rs` with a fake `kioskd` on a temporary socket: install, progress, launch request and the rollback notice, at both screen sizes. `kiosk-ui --screenshot --page apps` adds the page to the docs screenshots.
+**Tests:** extend the existing offscreen UI tests in `headless.rs` with a fake `kioskd` on a temporary socket: install, progress, launch request and the rollback notice, at both screen sizes. `kiosk-ui --screenshot --page apps` adds the page to the docs screenshots. To click through it by hand, `tools/emulate.sh` runs kiosk-ui and the real `kioskd` in a desktop window (PIN `1234`, a stand-in `wpa_cli` for the Wi-Fi list); see the README.
 
 **Offline:** the catalog shows the cached index with a "last synced" time, and Install is greyed out for packages not in the cache.
 

@@ -10,9 +10,18 @@ impl eframe::App for DesktopApp {
     }
 }
 
+/// The window size: `KIOSK_WINDOW=800x480` shows the compact layout of the 5" panel.
+fn window_size() -> [f32; 2] {
+    let parsed = std::env::var("KIOSK_WINDOW").ok().and_then(|s| {
+        let (w, h) = s.split_once('x')?;
+        Some([w.parse().ok()?, h.parse().ok()?])
+    });
+    parsed.unwrap_or([1280.0, 720.0])
+}
+
 pub fn run(app: KioskApp) -> anyhow::Result<()> {
     let options = eframe::NativeOptions {
-        viewport: egui::ViewportBuilder::default().with_inner_size([1280.0, 720.0]).with_title("kiosk-ui"),
+        viewport: egui::ViewportBuilder::default().with_inner_size(window_size()).with_title("kiosk-ui"),
         renderer: eframe::Renderer::Glow,
         ..Default::default()
     };
