@@ -2,7 +2,7 @@
 //!
 //!   kiosk-ui                         fullscreen on the display (DRM/KMS, Linux)
 //!   kiosk-ui --window                in a desktop window (build with --features desktop)
-//!   kiosk-ui --screenshot out.png [--size 1280x720] [--page home|apps|network|controls|settings|all]
+//!   kiosk-ui --screenshot out.png [--size 1280x720] [--page home|apps|display|network|touch|system|all]
 //!
 //! Environment: KIOSK_DATA (settings + wallpaper.jpg), KIOSK_WALLPAPER,
 //! KIOSK_THEME, KIOSK_SCALE, KIOSK_FPS (default 30), KIOSK_MODE (e.g. 1280x720).
@@ -10,8 +10,10 @@
 mod app;
 mod backlight;
 mod catalog;
+mod keyboard;
 mod store;
 mod sysinfo;
+mod wifi;
 
 #[cfg(target_os = "linux")]
 mod headless;
@@ -21,9 +23,19 @@ mod desktop;
 
 use app::KioskApp;
 
+/// What `--page` can show: (page, Settings section, name).
+const SHOTS: [(usize, usize, &str); 6] = [
+    (0, 0, "home"),
+    (app::APPS_PAGE, 0, "apps"),
+    (app::SETTINGS_PAGE, app::DISPLAY_SECTION, "display"),
+    (app::SETTINGS_PAGE, app::NETWORK_SECTION, "network"),
+    (app::SETTINGS_PAGE, app::TOUCH_SECTION, "touch"),
+    (app::SETTINGS_PAGE, app::SYSTEM_SECTION, "system"),
+];
+
 fn usage() -> ! {
     eprintln!(
-        "usage: kiosk-ui [--window] [--screenshot FILE.png [--size WxH] [--page home|apps|network|controls|settings|all]]"
+        "usage: kiosk-ui [--window] [--screenshot FILE.png [--size WxH] [--page home|apps|display|network|touch|system|all]]"
     );
     std::process::exit(2);
 }
@@ -35,7 +47,7 @@ fn main() -> anyhow::Result<()> {
     let mut window = false;
     let mut shot: Option<std::path::PathBuf> = None;
     let mut size = [1280u32, 720];
-    let mut pages = vec![0usize];
+    let mut pages = vec![SHOTS[0]];
     while let Some(a) = args.next() {
         match a.as_str() {
             "--window" => window = true,
@@ -47,13 +59,11 @@ fn main() -> anyhow::Result<()> {
             }
             "--page" => {
                 pages = match args.next().as_deref() {
-                    Some("home") => vec![0],
-                    Some("apps") => vec![1],
-                    Some("network") => vec![2],
-                    Some("controls") => vec![3],
-                    Some("settings") => vec![4],
-                    Some("all") => vec![0, 1, 2, 3, 4],
-                    _ => usage(),
+                    Some("all") => SHOTS.to_vec(),
+                    // "controls" and "settings" are the old names of the Display section
+                    Some("controls" | "settings") => vec![SHOTS[2]],
+                    Some(name) => vec![*SHOTS.iter().find(|s| s.2 == name).unwrap_or_else(|| usage())],
+                    None => usage(),
                 }
             }
             "-h" | "--help" => usage(),

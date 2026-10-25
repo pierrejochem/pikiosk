@@ -80,7 +80,7 @@ The panel has no usable EDID, so `config.txt` forces the HDMI output on with an 
 and `cmdline.txt` sets `video=HDMI-A-1:800x480@60e`. Touch is USB HID (built into the kernel).
 
 - At 800×480 kiosk-ui switches to a layout drawn for that size, with larger type and touch targets.
-- This panel has no software backlight, so the Controls page shows no Brightness slider. On a
+- This panel has no software backlight, so Settings > Display shows no Brightness slider. On a
   panel with `/sys/class/backlight` (e.g. a DSI panel) it appears automatically.
 - kiosk-ui would prefer a DSI panel over HDMI if both were connected; `UI_OUTPUT=hdmi` in
   `kiosk.conf` reverses that.
@@ -101,7 +101,7 @@ For SSH access, put your public key into a file named **`authorized_keys`** on t
 
 ## The kiosk app: kiosk-ui (Rust + egui, liquid glass)
 
-![kiosk-ui Settings page with touchscreen calibration on the 800×480 panel](docs/kiosk-ui-settings.png)
+![kiosk-ui Settings > Network on the 800×480 panel: this device and the Wi-Fi networks in range (names blurred)](docs/kiosk-ui-network.png)
 
 `kiosk-ui/` is the app that starts at boot: a Rust program using **egui** with **liquid-glass**
 panels and controls. Glass elements refract, frost and light the wallpaper behind them with a
@@ -109,14 +109,22 @@ custom GLES 2 shader. It draws straight to the display through DRM/KMS + GBM + E
 Wayland), and reads touch, mouse and keyboard through libinput.
 
 The layout adapts: a compact design for 800×480 panels, a roomier one from 1280×720 up
-(`docs/kiosk-ui-1280x720.png`). Five pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
-- **Home**: clock, date, network address, uptime, CPU temperature and memory
+(`docs/kiosk-ui-1280x720.png`). Three pages, switched with the floating tab bar, a horizontal swipe or the arrow keys:
+- **Home**: clock, date, network address, uptime, CPU temperature and memory. The Network tile opens Settings > Network.
 - **Apps**: the installed apps as tiles, and the Store (see [Apps and the app store](#apps-and-the-app-store))
-- **Network**: interfaces with addresses and state, WiFi signal, gateway, DNS
-- **Controls**: frost and refraction sliders, wallpaper themes, brightness (on panels with a
-  backlight), animated-wallpaper toggle
-- **Settings** (`docs/kiosk-ui-settings.png`): touch calibration, frame-rate overlay, reset the look,
-  restart the app
+- **Settings**: four sections behind a segmented control at the top, each one a single screen with big touch targets
+  - **Display** (`docs/kiosk-ui-display.png`): frost and refraction sliders, wallpaper themes, brightness (on panels with a backlight), animated-wallpaper toggle
+  - **Network** (`docs/kiosk-ui-network.png`): this device's interfaces, gateway and DNS, and the Wi-Fi networks in range (see below)
+  - **Touch** (`docs/kiosk-ui-touch.png`): touch calibration
+  - **System**: frame-rate overlay, reset the look, restart the app
+
+**Wi-Fi from the touchscreen:** Settings > Network lists the networks in range with their signal. Tap one, type the
+password on the on-screen keyboard (`docs/kiosk-ui-keyboard.png`) and tap **Connect**. Tap a saved network to connect again,
+change its password or forget it. **Hidden network** takes a name as well. Joining or forgetting a network needs the admin PIN
+(`STORE_PIN` in `kiosk.conf`), the same one the Store uses; without a PIN the list is read-only. kioskd checks the password by
+connecting: a wrong one is refused and the networks that worked before keep working. Networks you add are saved in
+`/data/store/wifi.json` (readable by root only) and added to the WPA config on every boot, ahead of the `kiosk.conf` network,
+so they survive reboots and re-flashing the root filesystem. `WIFI_SSID` in `kiosk.conf` still works and is now optional.
 
 **Touch calibration:** **Calibrate** shows five crosses, one after another. Tap the centre of each.
 kiosk-ui fits a libinput calibration matrix to the taps, then shows a check screen where dots mark
@@ -144,7 +152,7 @@ control, swipe, brightness, a full touch calibration) at 1280×720 and 800×480 
 context.
 
 Display settings live in `kiosk.conf` (`UI_FPS`, `UI_SCALE`, `UI_MODE`, `UI_OUTPUT`). Copy a photo named
-`wallpaper.jpg` onto the boot partition and pick "Photo" on the Controls page to put the glass
+`wallpaper.jpg` onto the boot partition and pick "Photo" in Settings > Display to put the glass
 over your own image.
 
 On the Pi 3B the animated wallpaper costs GPU time. The frame rate is capped at 30 fps by default.

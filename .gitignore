@@ -3,3 +3,6 @@
 /target/
 # your SSH key goes on the boot partition, never into the repo
 /board/common/boot/authorized_keys
+
+# graphify knowledge graph output
+graphify-out/

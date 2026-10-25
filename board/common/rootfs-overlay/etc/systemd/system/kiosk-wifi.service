@@ -3,7 +3,8 @@
 # to the rootfs image and would remove any enable link for the template.
 [Unit]
 Description=WiFi (wpa_supplicant on wlan0)
-# Only start WiFi when kiosk.conf contains a WIFI_SSID.
+# apply-config writes this file on every boot: the kiosk.conf network plus the
+# ones added in Settings (/data/store/wifi.json).
 ConditionPathExists=/run/kiosk/wpa_supplicant-wlan0.conf
 Requires=sys-subsystem-net-devices-wlan0.device
 After=kiosk-config.service sys-subsystem-net-devices-wlan0.device

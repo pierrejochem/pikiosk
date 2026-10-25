@@ -66,14 +66,14 @@ impl Offscreen {
     }
 }
 
-pub fn screenshot(mut app: KioskApp, out: &Path, size: [u32; 2], pages: &[usize]) -> anyhow::Result<()> {
+pub fn screenshot(mut app: KioskApp, out: &Path, size: [u32; 2], pages: &[(usize, usize, &str)]) -> anyhow::Result<()> {
     let mut off = Offscreen::new(size)?;
     let [w, h] = size;
     let ppp = pixels_per_point(h);
-    let names = ["home", "apps", "network", "controls", "settings"];
     let mut t = 12.0;
-    for &page in pages {
+    for &(page, section, name) in pages {
         app.page = page;
+        app.section = section;
         // let page transitions and animations settle
         for _ in 0..40 {
             off.gfx.frame(&mut app, size, ppp, vec![], t);
@@ -82,7 +82,7 @@ pub fn screenshot(mut app: KioskApp, out: &Path, size: [u32; 2], pages: &[usize]
         let img = off.read();
         let path = if pages.len() > 1 {
             let stem = out.file_stem().and_then(|s| s.to_str()).unwrap_or("screenshot");
-            out.with_file_name(format!("{stem}-{}.png", names[page]))
+            out.with_file_name(format!("{stem}-{name}.png"))
         } else {
             out.to_path_buf()
         };
@@ -128,33 +128,38 @@ mod tests {
             t += 0.03;
         }
 
-        // tab bar: 600 wide, five items; the fifth is "Settings"
-        let tab = |i: f32| pos2(640.0 - 300.0 + 6.0 + (600.0 - 12.0) / 5.0 * (i + 0.5), 720.0 - 24.0 - 35.0);
-        click(&mut off, &mut app, &mut t, tab(4.0), tab(4.0));
-        assert_eq!(app.page, 4, "tab bar should switch to Settings");
+        // tab bar: 600 wide, three items; the third is "Settings"
+        let tab = |i: f32| pos2(640.0 - 300.0 + 6.0 + (600.0 - 12.0) / 3.0 * (i + 0.5), 720.0 - 24.0 - 35.0);
+        click(&mut off, &mut app, &mut t, tab(2.0), tab(2.0));
+        assert_eq!(app.page, crate::app::SETTINGS_PAGE, "tab bar should switch to Settings");
+
+        // the sections: a segmented control, 1000 wide at x 140, four segments, 106 down
+        let section = |i: f32| pos2(140.0 + 250.0 * (i + 0.5), 106.0);
+        click(&mut off, &mut app, &mut t, section(3.0), section(3.0));
+        assert_eq!(app.section, crate::app::SYSTEM_SECTION);
 
         // "Show frame rate" toggle, first row of the System card
         assert!(!app.settings.show_fps);
-        let toggle = pos2(1075.0, 84.0 + 112.0 + 8.0);
+        let toggle = pos2(885.0, 150.0 + 112.0 + 8.0);
         click(&mut off, &mut app, &mut t, toggle, toggle);
         assert!(app.settings.show_fps, "toggle should switch on");
 
-        click(&mut off, &mut app, &mut t, tab(3.0), tab(3.0));
-        assert_eq!(app.page, 3, "tab bar should switch to Controls");
+        click(&mut off, &mut app, &mut t, section(0.0), section(0.0));
+        assert_eq!(app.section, crate::app::DISPLAY_SECTION);
 
         // drag the Frost slider all the way to the right
-        let thumb = pos2(170.0 - 6.0 + 19.0 + (604.0 - 164.0 - 38.0) * 0.625, 84.0 + 112.0 + 38.0);
+        let thumb = pos2(170.0 - 6.0 + 19.0 + (604.0 - 164.0 - 38.0) * 0.625, 150.0 + 112.0 + 38.0);
         click(&mut off, &mut app, &mut t, thumb, pos2(700.0, thumb.y));
         assert!(app.settings.frost > 0.99, "frost slider should reach 100%, got {}", app.settings.frost);
 
         // segmented control: "Ocean"
-        let ocean = pos2(164.0 + (440.0 / 4.0) * 2.5, 84.0 + 112.0 + 2.0 * 98.0 + 47.0);
+        let ocean = pos2(164.0 + (440.0 / 4.0) * 2.5, 150.0 + 112.0 + 2.0 * 98.0 + 47.0);
         click(&mut off, &mut app, &mut t, ocean, ocean);
         assert_eq!(app.settings.theme, kiosk_kit::glass::Theme::Ocean);
 
-        // swipe right goes back to Network
+        // swipe right goes back to Apps
         click(&mut off, &mut app, &mut t, pos2(640.0, 600.0), pos2(900.0, 600.0));
-        assert_eq!(app.page, 2, "swipe right should go to the previous page");
+        assert_eq!(app.page, crate::app::APPS_PAGE, "swipe right should go to the previous page");
 
         // the frame actually contains glass: tab bar centre differs from a flat colour
         let img = off.read();
@@ -182,13 +187,14 @@ mod tests {
             t += 0.03;
         }
 
-        // compact tab bar: 500 wide, 10 from the bottom; fourth item is Controls
-        let tab = pos2(150.0 + 6.0 + 97.6 * 3.5, 440.0);
+        // compact tab bar: 500 wide, 10 from the bottom; third item is Settings, which opens on Display
+        let tab = pos2(150.0 + 6.0 + (488.0 / 3.0) * 2.5, 440.0);
         click(&mut off, &mut app, &mut t, tab, tab);
-        assert_eq!(app.page, 3);
+        assert_eq!(app.page, crate::app::SETTINGS_PAGE);
+        assert_eq!(app.section, crate::app::DISPLAY_SECTION);
 
         // drag the brightness thumb from 100% to about 20%
-        click(&mut off, &mut app, &mut t, pos2(746.0, 152.0), pos2(500.0, 152.0));
+        click(&mut off, &mut app, &mut t, pos2(746.0, 192.0), pos2(500.0, 192.0));
         let b = app.settings.brightness;
         assert!((0.15..0.25).contains(&b), "brightness {b}");
         let written: u32 = std::fs::read_to_string(dir.join("brightness")).unwrap().trim().parse().unwrap();
@@ -212,12 +218,14 @@ mod tests {
         }
         let tap = |off: &mut Offscreen, app: &mut KioskApp, t: &mut f64, p: egui::Pos2| click(off, app, t, p, p);
 
-        // Settings: fifth tab of the 500 wide compact bar
-        tap(&mut off, &mut app, &mut t, pos2(150.0 + 6.0 + 97.6 * 4.5, 440.0));
-        assert_eq!(app.page, 4, "tab bar should switch to Settings");
+        // Settings: third tab of the 500 wide compact bar, then the Touch section (third of four, 189 wide from x 22)
+        tap(&mut off, &mut app, &mut t, pos2(150.0 + 6.0 + (488.0 / 3.0) * 2.5, 440.0));
+        assert_eq!(app.page, crate::app::SETTINGS_PAGE, "tab bar should switch to Settings");
+        tap(&mut off, &mut app, &mut t, pos2(22.0 + 189.0 * 2.5, 65.0));
+        assert_eq!(app.section, crate::app::TOUCH_SECTION);
 
         // "Calibrate" button, bottom left of the Touch screen card
-        let calibrate_btn = pos2(122.0, 355.0);
+        let calibrate_btn = pos2(277.0, 361.0);
         tap(&mut off, &mut app, &mut t, calibrate_btn);
         assert!(app.calibrating(), "Calibrate should open the calibration screen");
         assert_eq!(app.touch_request.take(), Some(TouchRequest::Matrix(calibrate::IDENTITY)), "raw touches while calibrating");
@@ -260,7 +268,7 @@ mod tests {
         assert_eq!(app.settings.touch_matrix, Some(m));
 
         // "Reset" next to Calibrate: back to the device default
-        tap(&mut off, &mut app, &mut t, pos2(294.0, 355.0));
+        tap(&mut off, &mut app, &mut t, pos2(523.0, 361.0));
         assert_eq!(app.settings.touch_matrix, None);
         assert_eq!(app.touch_request.take(), Some(TouchRequest::Default));
     }
@@ -303,6 +311,8 @@ mod tests {
                         }
                         "store_install" if req["token"] != "abc123" => r#"{"ok":false,"error":"the admin PIN is needed"}"#.to_string(),
                         "progress" => r#"{"ok":true,"data":{"active":false,"phase":"","done":0,"total":0}}"#.to_string(),
+                        "wifi_scan" => r#"{"ok":true,"data":{"networks":[{"ssid":"Home","signal":90,"secured":true,"saved":false,"connected":false},{"ssid":"Cafe","signal":40,"secured":false,"saved":false,"connected":false}],"connected":null}}"#.to_string(),
+                        "wifi_connect" | "wifi_forget" if req["token"] != "abc123" => r#"{"ok":false,"error":"the admin PIN is needed"}"#.to_string(),
                         cmd => {
                             if cmd == "ack_notice" {
                                 acked.store(true, std::sync::atomic::Ordering::SeqCst);
@@ -323,6 +333,43 @@ mod tests {
             off.gfx.frame(app, off.size, 1.0, vec![], *t);
             *t += 0.03;
             std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+    }
+
+    /// Settings > Network lists the networks kioskd found, and a secured one opens the keyboard.
+    #[test]
+    fn network_section_lists_wifi_and_opens_the_keyboard() {
+        unsafe { std::env::remove_var("KIOSK_DATA") };
+        let dir = std::env::temp_dir().join(format!("kiosk-wifi-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let (sock, _requests) = fake_kioskd(&dir);
+        unsafe { std::env::set_var("KIOSKD_SOCK", &sock) };
+        let mut off = Offscreen::new([800, 480]).expect("EGL surfaceless context (needs Mesa)");
+        let mut app = KioskApp::new();
+        app.page = crate::app::SETTINGS_PAGE;
+        app.section = crate::app::NETWORK_SECTION;
+        let mut t = 1.0;
+        for _ in 0..200 {
+            settle(&mut off, &mut app, &mut t, 1);
+            if app.store.wifi.net_count() > 0 {
+                break;
+            }
+        }
+        settle(&mut off, &mut app, &mut t, 30);
+        assert_eq!(app.store.wifi.net_count(), 2, "the scan result is listed");
+        assert!(!app.store.wifi_modal());
+        if let Some(dir) = std::env::var_os("KIOSK_SHOTS") {
+            let img = off.read();
+            image::save_buffer(std::path::Path::new(&dir).join("wifi-list-800x480.png"), &img, 800, 480, image::ColorType::Rgba8).unwrap();
+        }
+
+        // the first row ("Home", secured): 184 down, in the right-hand card
+        click(&mut off, &mut app, &mut t, pos2(500.0, 184.0), pos2(500.0, 184.0));
+        settle(&mut off, &mut app, &mut t, 15);
+        assert!(app.store.wifi_modal(), "a secured network opens the password dialog");
+        if let Some(dir) = std::env::var_os("KIOSK_SHOTS") {
+            let img = off.read();
+            image::save_buffer(std::path::Path::new(&dir).join("wifi-keyboard-800x480.png"), &img, 800, 480, image::ColorType::Rgba8).unwrap();
         }
     }
 
@@ -352,10 +399,10 @@ mod tests {
                 settle(off, app, t, 12);
             };
 
-            // second tab of the five
+            // second tab of the three
             let bar_w = l.v(600.0, 500.0);
             let bar_top = h - l.v(70.0, 60.0) - l.v(24.0, 10.0);
-            let tab = pos2(w * 0.5 - bar_w * 0.5 + 6.0 + (bar_w - 12.0) / 5.0 * 1.5, h - l.v(24.0, 10.0) - l.v(70.0, 60.0) * 0.5);
+            let tab = pos2(w * 0.5 - bar_w * 0.5 + 6.0 + (bar_w - 12.0) / 3.0 * 1.5, h - l.v(24.0, 10.0) - l.v(70.0, 60.0) * 0.5);
             click(&mut off, &mut app, &mut t, tab, tab);
             assert_eq!(app.page, crate::app::APPS_PAGE);
             for _ in 0..200 {
@@ -381,6 +428,8 @@ mod tests {
             tap(&mut off, &mut app, &mut t, d(632.0 - 120.0 + 50.0, 342.0));
             assert_eq!(next("ack_notice")["cmd"], "ack_notice");
             assert!(app.store.notices.is_empty());
+            settle(&mut off, &mut app, &mut t, 20);
+            shot(&mut off, "apps");
 
             // a tile launches its app
             let c = app.store.tile_center(&l, screen, bar_top, 1);

@@ -92,7 +92,7 @@ Use The Update Framework (TUF) through the `tough` crate rather than a home-made
 
 ## Store UI in kiosk-ui
 
-Add one page, **Apps**, to kiosk-ui's floating tab bar (Home · Apps · Network · Controls · Settings), built from the existing glass widgets in `widgets.rs` and laid out with `Lay` for both the 800×480 and the 1280×720 designs. kiosk-ui never installs anything itself: it sends requests to `kioskd` and draws the events that come back.
+Add one page, **Apps**, to kiosk-ui's floating tab bar (Home · Apps · Settings), built from the existing glass widgets in `widgets.rs` and laid out with `Lay` for both the 800×480 and the 1280×720 designs. kiosk-ui never installs anything itself: it sends requests to `kioskd` and draws the events that come back.
 
 | View | Content | Who |
 | --- | --- | --- |

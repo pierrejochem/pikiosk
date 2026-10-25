@@ -91,15 +91,19 @@ fi
 # ---- WiFi (/etc/wpa_supplicant/wpa_supplicant-wlan0.conf -> /run/kiosk/...) ------------------
 WPA="$RUN/wpa_supplicant-wlan0.conf"
 rm -f "$WPA"
-if [ -n "$WIFI_SSID" ]; then
-	# SSID written as hex so any character in it is safe
-	ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -tx1 -v | tr -d ' \n')
-	(
-		umask 077
-		{
-			echo "ctrl_interface=/run/wpa_supplicant"
-			echo "update_config=0"
-			[ -n "$WIFI_COUNTRY" ] && echo "country=$WIFI_COUNTRY"
+# networks added from the touchscreen: kioskd keeps them in /data/store/wifi.json
+SAVED=$(/usr/sbin/kioskd wifi-conf 2>/dev/null) || SAVED=
+# wpa_supplicant always runs, so the Settings screen can scan and add networks
+# even when kiosk.conf has none
+(
+	umask 077
+	{
+		echo "ctrl_interface=/run/wpa_supplicant"
+		echo "update_config=0"
+		[ -n "$WIFI_COUNTRY" ] && echo "country=$WIFI_COUNTRY"
+		if [ -n "$WIFI_SSID" ]; then
+			# SSID written as hex so any character in it is safe
+			ssid_hex=$(printf '%s' "$WIFI_SSID" | od -An -tx1 -v | tr -d ' \n')
 			echo "network={"
 			echo "	ssid=$ssid_hex"
 			[ "$WIFI_HIDDEN" = yes ] && echo "	scan_ssid=1"
@@ -117,9 +121,11 @@ if [ -n "$WIFI_SSID" ]; then
 				fi
 			fi
 			echo "}"
-		} > "$WPA"
-	)
-fi
+		fi
+		# these have priority 10, over the kiosk.conf network
+		[ -n "$SAVED" ] && printf '%s\n' "$SAVED"
+	} > "$WPA"
+)
 
 # ---- static addressing (overrides the DHCP .network files in /etc) ------------------------
 NET=/run/systemd/network/10-kiosk-static.network
@@ -189,5 +195,5 @@ case "$STORE_PIN" in
 	*) log "STORE_PIN must be 4 to 8 digits, nobody can be admin" ;;
 esac
 
-log "applied: host=$HOSTNAME tz=$TIMEZONE net=$NETWORK wifi=${WIFI_SSID:+on} ssh=$([ -d "$RUN/ssh" ] && echo on || echo off) app=$APP"
+log "applied: host=$HOSTNAME tz=$TIMEZONE net=$NETWORK wifi=${WIFI_SSID:+on}${SAVED:+ +saved} ssh=$([ -d "$RUN/ssh" ] && echo on || echo off) app=$APP"
 exit 0

@@ -84,15 +84,16 @@
 <section id="screens">
   <div class="sec-head">
     <div class="eyebrow">The UI</div>
-    <h2>Five pages, one swipe apart</h2>
+    <h2>Three pages, one swipe apart</h2>
     <p class="lead">Switch with the floating tab bar, a horizontal swipe or the arrow keys. A compact layout is drawn for 800×480, a roomier one from 1280×720.</p>
   </div>
   <div class="gallery" tabindex="0" aria-label="Screenshots, scroll sideways">
     <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-home.png" width="800" height="480" alt="Home page"><figcaption><b>Home.</b> Clock, date, network address, uptime, CPU temperature, memory.</figcaption></figure>
     <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-apps.png" width="800" height="480" alt="Apps page with app tiles and the Store tile"><figcaption><b>Apps.</b> Installed apps as tiles, and the Store.</figcaption></figure>
-    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-network.png" width="800" height="480" alt="Network page"><figcaption><b>Network.</b> Interfaces, addresses, WiFi signal, gateway, DNS.</figcaption></figure>
-    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-controls.png" width="800" height="480" alt="Controls page with frost and refraction sliders and wallpaper themes"><figcaption><b>Controls.</b> Frost and refraction, wallpaper themes, animated wallpaper.</figcaption></figure>
-    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-settings.png" width="800" height="480" alt="Settings page with touch calibration"><figcaption><b>Settings.</b> On-device touch calibration, frame rate overlay, restart.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-network.png" width="800" height="480" alt="Settings, Network section, with this device and the WiFi networks in range"><figcaption><b>Settings › Network.</b> This device, and the WiFi networks in range. Tap one to join it.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-keyboard.png" width="800" height="480" alt="On-screen keyboard for the WiFi password"><figcaption><b>On-screen keyboard.</b> Type the password; joining needs the admin PIN.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-display.png" width="800" height="480" alt="Settings, Display section, with frost and refraction sliders and wallpaper themes"><figcaption><b>Settings › Display.</b> Frost and refraction, wallpaper themes, animated wallpaper.</figcaption></figure>
+    <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-touch.png" width="800" height="480" alt="Settings, Touch section, with touch calibration"><figcaption><b>Settings › Touch.</b> On-device touch calibration. System has the frame rate overlay and restart.</figcaption></figure>
     <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-photo.png" width="800" height="480" alt="Glass over a photo wallpaper"><figcaption><b>Your own wallpaper.</b> Copy <code>wallpaper.jpg</code> to the boot partition.</figcaption></figure>
     <figure class="glass shot"><img loading="lazy" src="img/kiosk-ui-1280x720.png" width="1280" height="720" alt="The layout at 1280 by 720"><figcaption><b>1280×720.</b> The roomier layout.</figcaption></figure>
   </div>
@@ -124,7 +125,7 @@
   </div>
   <div class="steps">
     <div class="glass step"><h3>Flash the image</h3><p>Open Raspberry Pi Imager, choose “Use custom”, pick the <code>.img.xz</code>, write it to an SD card. The data partition grows to fill the card on first boot.</p></div>
-    <div class="glass step"><h3>Edit <code>kiosk.conf</code></h3><p>The card’s FAT partition <code>KIOSKBOOT</code> shows up on your computer. Set hostname, timezone and WiFi. Changes apply on the next boot.</p>
+    <div class="glass step"><h3>Edit <code>kiosk.conf</code></h3><p>The card’s FAT partition <code>KIOSKBOOT</code> shows up on your computer. Set hostname, timezone and WiFi, or leave WiFi empty and add networks on the touchscreen in Settings › Network. Changes apply on the next boot.</p>
       <div class="code-wrap"><pre><span class="c"># KIOSKBOOT/kiosk.conf</span>
 HOSTNAME=kiosk
 TIMEZONE=Europe/Amsterdam

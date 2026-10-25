@@ -1,4 +1,4 @@
-//! The kiosk screen: wallpaper, status bar, four pages and a floating tab bar.
+//! The kiosk screen: wallpaper, status bar, three pages and a floating tab bar.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -92,14 +92,23 @@ impl Settings {
 }
 
 pub const APPS_PAGE: usize = 1;
-const PAGES: [(Icon, &str); 5] =
-    [(Icon::Home, "Home"), (Icon::Apps, "Apps"), (Icon::Wifi, "Network"), (Icon::Sliders, "Controls"), (Icon::Gear, "Settings")];
+pub const SETTINGS_PAGE: usize = 2;
+const PAGES: [(Icon, &str); 3] = [(Icon::Home, "Home"), (Icon::Apps, "Apps"), (Icon::Gear, "Settings")];
+
+/// The sections of the Settings page, in the order of the segmented control at its top.
+pub const SECTIONS: [&str; 4] = ["Display", "Network", "Touch", "System"];
+pub const DISPLAY_SECTION: usize = 0;
+pub const NETWORK_SECTION: usize = 1;
+pub const TOUCH_SECTION: usize = 2;
+pub const SYSTEM_SECTION: usize = 3;
 
 pub struct KioskApp {
     pub glass: GlassSystem,
     pub settings: Settings,
     settings_path: Option<PathBuf>,
     pub page: usize,
+    /// the open section of the Settings page
+    pub section: usize,
     monitor: Monitor,
     has_photo: bool,
     swipe: f32,
@@ -117,6 +126,8 @@ pub struct KioskApp {
     pub store: Store,
     /// the page of the previous frame, to refresh the Apps page when it opens
     shown_page: usize,
+    /// whether the Network section was open last frame, to ask kioskd for its state when it opens
+    shown_net: bool,
     /// seconds of the fade-in from black so far; None when the fade is off
     fade: Option<f32>,
 }
@@ -162,6 +173,7 @@ impl KioskApp {
             settings,
             settings_path,
             page: 0,
+            section: DISPLAY_SECTION,
             monitor: Monitor::default(),
             has_photo,
             swipe: 0.0,
@@ -173,6 +185,7 @@ impl KioskApp {
             touch_request: None,
             store: Store::new(),
             shown_page: usize::MAX,
+            shown_net: false,
             fade: None,
         }
     }
@@ -270,7 +283,10 @@ impl KioskApp {
         if bg.dragged() {
             self.swipe += bg.drag_delta().x;
         }
-        if bg.drag_stopped() {
+        let dialog_open = self.page == SETTINGS_PAGE && self.store.wifi_modal();
+        if bg.drag_stopped() && dialog_open {
+            self.swipe = 0.0;
+        } else if bg.drag_stopped() {
             let threshold = l.v(90.0, 70.0);
             if self.swipe < -threshold && self.page + 1 < PAGES.len() {
                 self.page += 1;
@@ -293,6 +309,12 @@ impl KioskApp {
             self.store.refresh(&ctx);
         }
         self.shown_page = self.page;
+        let in_net = self.page == SETTINGS_PAGE && self.section == NETWORK_SECTION;
+        if in_net && !self.shown_net {
+            // the admin PIN state (is one set?) comes with the overview
+            self.store.refresh(&ctx);
+        }
+        self.shown_net = in_net;
 
         // pages slide and fade into each other
         let anim = ctx.animate_value_with_time(Id::unique("page"), self.page as f32, 0.38);
@@ -307,16 +329,14 @@ impl KioskApp {
             match i {
                 0 => self.home(ui, &l, sc, area, &info),
                 APPS_PAGE => self.store.ui(ui, &l, sc, area, bar_top, time),
-                2 => self.network(ui, &l, sc, area, &info),
-                3 => self.controls(ui, &l, sc, area),
-                _ => self.settings_page(ui, &l, sc, area, time),
+                _ => self.settings_page(ui, &l, sc, area, bar_top, time, &info),
             }
         }
 
         // tab bar
         let bar_w = l.v(600.0, 500.0);
         let bar = Rect::from_min_size(pos2(screen.center().x - bar_w * 0.5, bar_top), vec2(bar_w, bar_h));
-        if !(self.page == APPS_PAGE && self.store.modal()) {
+        if !((self.page == APPS_PAGE && self.store.modal()) || dialog_open) {
             w::tab_bar(ui, base, bar, Id::unique("tabs"), &PAGES, &mut self.page);
         }
 
@@ -376,7 +396,7 @@ impl KioskApp {
         w::icon(p, ic, pos2(r.left() - l.v(22.0, 18.0), y), l.v(20.0, 17.0), sc.white(if ok { 0.92 } else { 0.4 }));
     }
 
-    fn home(&self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, info: &sysinfo::SysInfo) {
+    fn home(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, info: &sysinfo::SysInfo) {
         let p = ui.painter().clone();
         let now = Local::now();
 
@@ -407,7 +427,13 @@ impl KioskApp {
             ),
             None => (Icon::Globe, "Offline".into(), "no address yet".into()),
         };
-        tile_card(&p, l, sc, tile(0, 0), net_icon, "Network", &net_val, &net_sub);
+        let net_tile = tile(0, 0);
+        tile_card(&p, l, sc, net_tile, net_icon, "Network", &net_val, &net_sub);
+        // the Network tile opens the Network section of Settings
+        if sc.enabled && ui.interact(net_tile, Id::unique("net-tile"), Sense::click()).clicked() {
+            self.page = SETTINGS_PAGE;
+            self.section = NETWORK_SECTION;
+        }
 
         let up = info.uptime.map(sysinfo::format_uptime).unwrap_or_else(|| "—".into());
         let load = info.load.map(|v| format!("load {v:.2}")).unwrap_or_else(|| "since boot".into());
@@ -438,25 +464,33 @@ impl KioskApp {
         p.rect_filled(Rect::from_min_size(bar.min, vec2(bar.width() * frac, bh)), cr, sc.white(0.9));
     }
 
-    fn network(&self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, info: &sysinfo::SysInfo) {
+    /// The Network section: this device's interfaces on the left, the Wi-Fi networks on the right.
+    #[allow(clippy::too_many_arguments)]
+    fn network(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, top: f32, ch: f32, time: f64, info: &sysinfo::SysInfo) {
+        self.store.wifi_frame(ui.ctx(), time, sc.enabled);
         let p = ui.painter().clone();
-        let cw = (area.width() - l.v(144.0, 44.0)).min(l.v(940.0, 760.0));
-        let shown: Vec<_> = info.ifaces.iter().take(if l.compact { 3 } else { 4 }).collect();
+        let gap = l.v(24.0, 12.0);
+        let total = (area.width() - l.v(144.0, 44.0)).min(l.v(1000.0, 760.0));
+        let lw = total * if l.compact { 0.38 } else { 0.37 };
+        let left = Rect::from_min_size(pos2(area.center().x - total * 0.5, top), vec2(lw, ch));
+        let right = Rect::from_min_max(pos2(left.right() + gap, top), pos2(left.left() + total, top + ch));
+
+        // --- this device
+        sc.glass(&p, left, Glass::panel(l.v(34.0, 26.0)));
+        let pad = l.v(30.0, 20.0);
+        let (x, xr) = (left.left() + pad, left.right() - pad);
+        let ty = left.top() + l.v(46.0, 32.0);
+        text(&p, pos2(x, ty), Align2::LEFT_CENTER, "This device", l.v(28.0, 22.0), sc.white(1.0));
+        text(&p, pos2(x, ty + l.v(30.0, 22.0)), Align2::LEFT_CENTER, &format!("{}.local", info.hostname), l.v(16.0, 13.0), sc.white(0.65));
+
         let row_h = l.v(66.0, 50.0);
-        let kv_h = l.v(46.0, 32.0);
-        let ch = l.v(108.0, 78.0) + shown.len().max(1) as f32 * row_h + 2.0 * kv_h + l.v(18.0, 8.0);
-        let card = Rect::from_min_size(pos2(area.center().x - cw * 0.5, l.v(84.0, 46.0)), vec2(cw, ch));
-        sc.glass(&p, card, Glass::panel(l.v(34.0, 26.0)));
-
-        let x = card.left() + l.v(34.0, 22.0);
-        let xr = card.right() - l.v(34.0, 22.0);
-        let ty = card.top() + l.v(46.0, 32.0);
-        text(&p, pos2(x, ty), Align2::LEFT_CENTER, "Network", l.v(32.0, 22.0), sc.white(1.0));
-        text(&p, pos2(xr, ty), Align2::RIGHT_CENTER, &format!("{}.local", info.hostname), l.v(18.0, 14.0), sc.white(0.7));
-
-        let mut y = card.top() + l.v(108.0, 78.0);
+        let kv_h = l.v(46.0, 30.0);
+        let head = l.v(112.0, 82.0);
+        let fit = (((ch - head - 2.0 * kv_h - l.v(18.0, 8.0)) / row_h).floor() as usize).clamp(1, 4);
+        let shown: Vec<_> = info.ifaces.iter().take(fit).collect();
+        let mut y = left.top() + head;
         if shown.is_empty() {
-            text(&p, pos2(x, y), Align2::LEFT_CENTER, "No network interfaces", l.v(20.0, 16.0), sc.white(0.7));
+            text(&p, pos2(x, y), Align2::LEFT_CENTER, "No network interfaces", l.v(18.0, 14.0), sc.white(0.7));
             y += row_h;
         }
         for i in shown {
@@ -465,31 +499,40 @@ impl KioskApp {
             let ib = Rect::from_center_size(pos2(x + d * 0.5, y), vec2(d, d));
             sc.glass(&p, ib, Glass::control(d * 0.5).frost(0.6).no_shadow());
             w::icon(&p, ic, ib.center(), d * 0.5, sc.white(i.up as u8 as f32 * 0.6 + 0.4));
-            let tx = x + d + l.v(20.0, 14.0);
-            text(&p, pos2(tx, y - l.v(11.0, 9.0)), Align2::LEFT_CENTER, &i.name, l.v(21.0, 16.0), sc.white(1.0));
-            let addrs = if i.addrs.is_empty() { "no address".to_string() } else { i.addrs.iter().take(2).cloned().collect::<Vec<_>>().join("   ") };
-            text(&p, pos2(tx, y + l.v(13.0, 10.0)), Align2::LEFT_CENTER, &addrs, l.v(15.0, 13.0), sc.white(0.65));
-
+            let tx = x + d + l.v(16.0, 12.0);
+            text(&p, pos2(tx, y - l.v(11.0, 9.0)), Align2::LEFT_CENTER, &i.name, l.v(20.0, 16.0), sc.white(1.0));
+            let addr = i.addrs.iter().find(|a| !a.contains(':')).or(i.addrs.first()).map(|a| a.split('/').next().unwrap_or(a).to_string());
+            text(&p, pos2(tx, y + l.v(13.0, 10.0)), Align2::LEFT_CENTER, addr.as_deref().unwrap_or("no address"), l.v(15.0, 13.0), sc.white(0.65));
+            // a dot says whether it is up, the bars how strong the signal is
             let connected = i.up && !i.addrs.is_empty();
-            let (label, col) = match (connected, i.up) {
-                (true, _) => ("Connected", GREEN),
-                (false, true) => ("No address", Color32::from_rgb(255, 159, 10)),
-                _ => ("Down", Color32::from_gray(120)),
+            let col = match (connected, i.up) {
+                (true, _) => GREEN,
+                (false, true) => Color32::from_rgb(255, 159, 10),
+                _ => Color32::from_gray(120),
             };
-            let pr = w::pill(ui, sc, pos2(xr, y), label, col);
+            let mut rx = xr - l.v(6.0, 5.0);
+            p.circle_filled(pos2(rx, y), l.v(6.0, 5.0), sc.fade(col));
+            rx -= l.v(24.0, 18.0);
             if let Some(q) = i.quality {
-                bars(&p, pos2(pr.left() - l.v(16.0, 12.0), y + l.v(9.0, 7.0)), sc.u, q, sc);
+                bars(&p, pos2(rx + l.v(12.0, 9.0), y + l.v(9.0, 7.0)), sc.u, q, sc);
             }
             y += row_h;
         }
 
         y += l.v(4.0, 2.0);
         p.line_segment([pos2(x, y - row_h * 0.5), pos2(xr, y - row_h * 0.5)], Stroke::new(1.0, sc.white(0.18)));
-        let dns = if info.dns.is_empty() { "—".to_string() } else { info.dns.iter().take(3).cloned().collect::<Vec<_>>().join("   ") };
+        let dns = info.dns.first().cloned().unwrap_or_else(|| "—".into());
         for (k, v) in [("Gateway", info.gateway.clone().unwrap_or_else(|| "—".into())), ("DNS", dns)] {
-            text(&p, pos2(x, y), Align2::LEFT_CENTER, k, l.v(19.0, 15.0), sc.white(0.75));
-            text(&p, pos2(xr, y), Align2::RIGHT_CENTER, &v, l.v(19.0, 15.0), sc.white(1.0));
+            text(&p, pos2(x, y), Align2::LEFT_CENTER, k, l.v(18.0, 14.0), sc.white(0.75));
+            text(&p, pos2(xr, y), Align2::RIGHT_CENTER, &v, l.v(18.0, 14.0), sc.white(1.0));
             y += kv_h;
+        }
+
+        // --- Wi-Fi
+        self.store.wifi_card(ui, l, sc, right, time);
+        self.store.wifi_dialog(ui, l, sc, area, time);
+        if self.store.pin.is_some() {
+            self.store.pin_modal(ui, l, sc, area, time);
         }
     }
 
@@ -504,17 +547,37 @@ impl KioskApp {
         y + l.v(98.0, 76.0)
     }
 
-    fn controls(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect) {
+    /// A label with a sub-label and a toggle on the right. Returns the y for the next row.
+    #[allow(clippy::too_many_arguments)]
+    fn toggle_row(ui: &mut Ui, l: &Lay, sc: Sc, x: f32, xr: f32, y: f32, label: &str, sub: &str, id: &str, on: &mut bool) -> f32 {
+        let p = ui.painter().clone();
+        text(&p, pos2(x, y - l.v(10.0, 8.0)), Align2::LEFT_CENTER, label, l.v(20.0, 16.0), sc.white(0.95));
+        text(&p, pos2(x, y + l.v(15.0, 11.0)), Align2::LEFT_CENTER, sub, l.v(15.0, 13.0), sc.white(0.6));
+        let (tw, th) = (l.v(70.0, 58.0), l.v(34.0, 30.0));
+        let t = Rect::from_min_size(pos2(xr - tw, y - th * 0.5), vec2(tw, th));
+        w::toggle(ui, sc, t, Id::unique(id), on);
+        y + l.v(84.0, 58.0)
+    }
+
+    /// Two buttons side by side at the bottom of a card.
+    fn button_pair(l: &Lay, x: f32, xr: f32, bottom: f32) -> (Rect, Rect) {
+        let gap = l.v(16.0, 12.0);
+        let bw = (xr - x - gap) * 0.5;
+        let bh = l.v(52.0, 42.0);
+        let a = Rect::from_min_size(pos2(x, bottom - bh), vec2(bw, bh));
+        (a, a.translate(vec2(bw + gap, 0.0)))
+    }
+
+    /// The Display section: glass look, wallpaper, brightness and the wallpaper animation.
+    fn display(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, top: f32, ch: f32) {
         let p = ui.painter().clone();
         let gap = l.v(24.0, 12.0);
         let total = (area.width() - l.v(144.0, 44.0)).min(l.v(1000.0, 760.0));
         let cw = (total - gap) * 0.5;
-        let top = l.v(84.0, 46.0);
-        let ch = l.v(470.0, 350.0);
         let left = Rect::from_min_size(pos2(area.center().x - total * 0.5, top), vec2(cw, ch));
         let right = left.translate(vec2(cw + gap, 0.0));
         let pad = l.v(30.0, 20.0);
-        let first_row = l.v(112.0, 76.0);
+        let first_row = l.v(112.0, 66.0);
 
         // --- Glass card
         sc.glass(&p, left, Glass::panel(l.v(34.0, 26.0)));
@@ -552,45 +615,42 @@ impl KioskApp {
         Self::toggle_row(ui, l, sc, x, xr, y, "Animated wallpaper", "Uses more GPU", "anim", &mut self.settings.animate);
     }
 
-    /// A label with a sub-label and a toggle on the right. Returns the y for the next row.
+    /// The Settings page: a segmented control over the sections, each one a single screen.
     #[allow(clippy::too_many_arguments)]
-    fn toggle_row(ui: &mut Ui, l: &Lay, sc: Sc, x: f32, xr: f32, y: f32, label: &str, sub: &str, id: &str, on: &mut bool) -> f32 {
-        let p = ui.painter().clone();
-        text(&p, pos2(x, y - l.v(10.0, 8.0)), Align2::LEFT_CENTER, label, l.v(20.0, 16.0), sc.white(0.95));
-        text(&p, pos2(x, y + l.v(15.0, 11.0)), Align2::LEFT_CENTER, sub, l.v(15.0, 13.0), sc.white(0.6));
-        let (tw, th) = (l.v(70.0, 58.0), l.v(34.0, 30.0));
-        let t = Rect::from_min_size(pos2(xr - tw, y - th * 0.5), vec2(tw, th));
-        w::toggle(ui, sc, t, Id::unique(id), on);
-        y + l.v(84.0, 58.0)
-    }
-
-    /// Two buttons side by side at the bottom of a card.
-    fn button_pair(l: &Lay, x: f32, xr: f32, bottom: f32) -> (Rect, Rect) {
-        let gap = l.v(16.0, 12.0);
-        let bw = (xr - x - gap) * 0.5;
-        let bh = l.v(52.0, 42.0);
-        let a = Rect::from_min_size(pos2(x, bottom - bh), vec2(bw, bh));
-        (a, a.translate(vec2(bw + gap, 0.0)))
-    }
-
-    fn settings_page(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, time: f64) {
-        let p = ui.painter().clone();
-        let gap = l.v(24.0, 12.0);
+    fn settings_page(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, bar_top: f32, time: f64, info: &sysinfo::SysInfo) {
         let total = (area.width() - l.v(144.0, 44.0)).min(l.v(1000.0, 760.0));
-        let cw = (total - gap) * 0.5;
-        let top = l.v(84.0, 46.0);
-        let ch = l.v(470.0, 350.0);
-        let left = Rect::from_min_size(pos2(area.center().x - total * 0.5, top), vec2(cw, ch));
-        let right = left.translate(vec2(cw + gap, 0.0));
-        let pad = l.v(30.0, 20.0);
-        let first_row = l.v(112.0, 76.0);
+        let seg = Rect::from_min_size(pos2(area.center().x - total * 0.5, l.v(80.0, 44.0)), vec2(total, l.v(52.0, 42.0)));
+        w::segmented(ui, sc, seg, Id::unique("settings-section"), &SECTIONS, &mut self.section);
 
-        // --- Touch screen card
-        sc.glass(&p, left, Glass::panel(l.v(34.0, 26.0)));
-        let x = left.left() + pad;
-        let xr = left.right() - pad;
-        text(&p, pos2(x, left.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "Touch screen", l.v(30.0, 22.0), sc.white(1.0));
-        let y = left.top() + first_row;
+        let top = seg.bottom() + l.v(18.0, 10.0);
+        let ch = bar_top - top - l.v(14.0, 8.0);
+        match self.section {
+            DISPLAY_SECTION => self.display(ui, l, sc, area, top, ch),
+            NETWORK_SECTION => self.network(ui, l, sc, area, top, ch, time, info),
+            TOUCH_SECTION => self.touch(ui, l, sc, area, top, ch, time),
+            _ => self.system(ui, l, sc, area, top, ch),
+        }
+    }
+
+    /// A single centred card for the sections that are one card wide.
+    fn single_card(l: &Lay, area: Rect, top: f32, ch: f32) -> Rect {
+        let cw = (area.width() - l.v(144.0, 44.0)).min(l.v(620.0, 520.0));
+        Rect::from_min_size(pos2(area.center().x - cw * 0.5, top), vec2(cw, ch))
+    }
+
+    /// The Touch section: calibration of the touchscreen.
+    #[allow(clippy::too_many_arguments)]
+    fn touch(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, top: f32, ch: f32, time: f64) {
+        let p = ui.painter().clone();
+        let card = Self::single_card(l, area, top, ch);
+        let pad = l.v(30.0, 20.0);
+        let first_row = l.v(112.0, 66.0);
+
+        sc.glass(&p, card, Glass::panel(l.v(34.0, 26.0)));
+        let x = card.left() + pad;
+        let xr = card.right() - pad;
+        text(&p, pos2(x, card.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "Touch screen", l.v(30.0, 22.0), sc.white(1.0));
+        let y = card.top() + first_row;
         let (state, detail) = match self.settings.touch_matrix {
             Some(_) => ("Calibrated", format!("on {}", self.settings.touch_date)),
             None => ("Default", "from the system image".to_string()),
@@ -603,7 +663,7 @@ impl KioskApp {
             let ly = y + l.v(70.0, 52.0) + i as f32 * l.v(26.0, 20.0);
             text(&p, pos2(x, ly), Align2::LEFT_CENTER, line, l.v(16.0, 14.0), sc.white(0.7));
         }
-        let (calibrate, reset) = Self::button_pair(l, x, xr, left.bottom() - pad);
+        let (calibrate, reset) = Self::button_pair(l, x, xr, card.bottom() - pad);
         if w::button(ui, sc, calibrate, Id::unique("calibrate"), "Calibrate", Some(ACCENT)).clicked() {
             self.calib = Some(Calibration::new(time));
         }
@@ -612,13 +672,20 @@ impl KioskApp {
             self.settings.touch_date.clear();
             self.touch_request = Some(TouchRequest::Default);
         }
+    }
 
-        // --- System card
-        sc.glass(&p, right, Glass::panel(l.v(34.0, 26.0)));
-        let x = right.left() + pad;
-        let xr = right.right() - pad;
-        text(&p, pos2(x, right.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "System", l.v(30.0, 22.0), sc.white(1.0));
-        let mut y = right.top() + first_row + l.v(8.0, 14.0);
+    /// The System section: frame rate overlay, screen facts, reset and restart.
+    fn system(&mut self, ui: &mut Ui, l: &Lay, sc: Sc, area: Rect, top: f32, ch: f32) {
+        let p = ui.painter().clone();
+        let card = Self::single_card(l, area, top, ch);
+        let pad = l.v(30.0, 20.0);
+        let first_row = l.v(112.0, 66.0);
+
+        sc.glass(&p, card, Glass::panel(l.v(34.0, 26.0)));
+        let x = card.left() + pad;
+        let xr = card.right() - pad;
+        text(&p, pos2(x, card.top() + l.v(44.0, 30.0)), Align2::LEFT_CENTER, "System", l.v(30.0, 22.0), sc.white(1.0));
+        let mut y = card.top() + first_row + l.v(8.0, 14.0);
         y = Self::toggle_row(ui, l, sc, x, xr, y, "Show frame rate", "Overlay at the top", "fps", &mut self.settings.show_fps);
 
         if !l.compact {
@@ -634,7 +701,7 @@ impl KioskApp {
             }
         }
 
-        let (reset, restart) = Self::button_pair(l, x, xr, right.bottom() - pad);
+        let (reset, restart) = Self::button_pair(l, x, xr, card.bottom() - pad);
         if w::button(ui, sc, reset, Id::unique("reset"), "Reset look", None).clicked() {
             // look settings only: keep the wallpaper, brightness and touch calibration
             let keep = self.settings.clone();
@@ -686,7 +753,7 @@ fn ring(p: &egui::Painter, c: Pos2, r: f32, width: f32, frac: f32, col: Color32,
     p.add(egui::Shape::line(pts, Stroke::new(width, col)));
 }
 
-fn bars(p: &egui::Painter, base: Pos2, u: f32, q: f32, sc: Sc) {
+pub(crate) fn bars(p: &egui::Painter, base: Pos2, u: f32, q: f32, sc: Sc) {
     for i in 0..4 {
         let h = (5.0 + 4.0 * i as f32) * u;
         let r = Rect::from_min_size(pos2(base.x - (3 - i) as f32 * 6.0 * u, base.y - h), vec2(4.0 * u, h));

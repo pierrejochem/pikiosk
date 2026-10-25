@@ -131,6 +131,11 @@ pub(crate) enum Event {
     WrongPin { tries_left: u32 },
     Locked { secs: u64 },
     Progress(Progress),
+    WifiScan(crate::wifi::ScanData),
+    WifiScanFailed(String),
+    /// a network was joined or forgotten
+    WifiDone,
+    WifiFailed(String),
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -301,6 +306,7 @@ pub struct Store {
     progress_asked: f64,
     progress_inflight: bool,
     pub(crate) confirm_remove: Option<(String, f64)>,
+    pub(crate) wifi: crate::wifi::Wifi,
 }
 
 /// The admin session ends this long after the last touch.
@@ -336,6 +342,7 @@ impl Store {
             progress_asked: 0.0,
             progress_inflight: false,
             confirm_remove: None,
+            wifi: crate::wifi::Wifi::default(),
         }
     }
 
@@ -453,6 +460,7 @@ impl Store {
                     self.reachable = Some(false);
                     self.busy = None;
                     self.job = None;
+                    self.wifi.unreachable();
                 }
                 Event::Unlocked(token) => {
                     self.token = Some(token);
@@ -482,6 +490,16 @@ impl Store {
                 Event::Progress(p) => {
                     self.progress_inflight = false;
                     self.progress = p;
+                }
+                Event::WifiScan(d) => self.wifi.scanned(d),
+                Event::WifiScanFailed(e) => self.wifi.scan_failed(e),
+                Event::WifiDone => self.wifi.done(time),
+                Event::WifiFailed(e) => {
+                    // a session that ended on kioskd's side is over here too
+                    if e.contains("admin PIN") || e.contains("session") {
+                        self.token = None;
+                    }
+                    self.wifi.failed(e);
                 }
             }
         }

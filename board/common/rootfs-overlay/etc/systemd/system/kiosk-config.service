@@ -1,8 +1,10 @@
 [Unit]
 Description=Apply /boot/kiosk.conf
 DefaultDependencies=no
-Wants=boot.mount network-pre.target
-After=local-fs.target boot.mount
+# /data is a nofail mount, so local-fs.target does not wait for it; the networks added in
+# Settings are read from /data/store/wifi.json, so wait for it here.
+Wants=boot.mount network-pre.target data.mount
+After=local-fs.target boot.mount data.mount
 Before=sysinit.target network-pre.target systemd-networkd.service systemd-resolved.service systemd-timesyncd.service wpa_supplicant@wlan0.service dropbear.service kiosk.service
 
 [Service]

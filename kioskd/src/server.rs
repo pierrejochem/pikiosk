@@ -9,7 +9,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 
-use crate::{admin, home, install, launch, progress, state, store};
+use crate::{admin, home, install, launch, progress, state, store, wifi};
 
 #[derive(Deserialize)]
 #[serde(tag = "cmd", rename_all = "snake_case")]
@@ -29,6 +29,10 @@ enum Request {
     Keepalive { token: String },
     AckNotice { id: String },
     Progress,
+    WifiScan,
+    WifiStatus,
+    WifiConnect { ssid: String, psk: Option<String>, #[serde(default)] hidden: bool, token: Option<String> },
+    WifiForget { ssid: String, token: Option<String> },
 }
 
 #[derive(Serialize, Deserialize)]
@@ -121,6 +125,13 @@ fn handle(line: &str, peer_is_root: bool) -> Reply {
         }
         Request::AckNotice { id } => state::update(&paths.store, |s| s.notices.retain(|n| n.id != id)).map(|()| None),
         Request::Progress => json(serde_json::to_value(progress::get())),
+        Request::WifiScan => wifi::scan(&wifi::Wpa::from_env(), &paths.store).map(Some),
+        Request::WifiStatus => wifi::status(&wifi::Wpa::from_env()).map(|s| Some(s.to_json())),
+        // changing the network needs the admin, like installing an app: anyone at the screen could otherwise move the device
+        Request::WifiConnect { ssid, psk, hidden, token } => {
+            authorize(&token, peer_is_root).and_then(|()| wifi::connect(&wifi::Wpa::from_env(), &paths.store, &ssid, psk, hidden)).map(Some)
+        }
+        Request::WifiForget { ssid, token } => authorize(&token, peer_is_root).and_then(|()| wifi::forget(&wifi::Wpa::from_env(), &paths.store, &ssid)).map(|()| None),
     };
     match result {
         Ok(data) => Reply::ok(data),
@@ -282,5 +293,17 @@ mod tests {
         let r = handle(r#"{"cmd":"format"}"#, true);
         assert!(!r.ok && r.error.unwrap().contains("bad request"));
         assert!(!handle("not json", true).ok);
+    }
+
+    #[test]
+    fn changing_the_wifi_needs_the_admin() {
+        // not root and no token: refused before wpa_supplicant is touched
+        let r = handle(r#"{"cmd":"wifi_connect","ssid":"Home","psk":"hunter2hunter2"}"#, false);
+        assert!(!r.ok && r.error.unwrap().contains("PIN"), "connect");
+        let r = handle(r#"{"cmd":"wifi_forget","ssid":"Home","token":"nope"}"#, false);
+        assert!(!r.ok && r.error.unwrap().contains("PIN"), "forget");
+        // root passes the check and meets the input validation
+        let r = handle(r#"{"cmd":"wifi_connect","ssid":"Home","psk":"short"}"#, true);
+        assert!(!r.ok && r.error.unwrap().contains("password"), "root, bad password");
     }
 }

@@ -23,11 +23,12 @@ mod progress;
 mod server;
 mod state;
 mod store;
+mod wifi;
 
 use anyhow::{Result, bail};
 
 fn usage() -> ! {
-    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | overview | refresh | get <id> | rollback <id>");
+    eprintln!("usage: kioskd daemon | launch <id> | stop | install <file> | remove <id> | list | local | overview | refresh | get <id> | rollback <id> | wifi-conf");
     std::process::exit(2);
 }
 
@@ -46,6 +47,11 @@ fn main() -> Result<()> {
         ["rollback", id] => client(&format!(r#"{{"cmd":"rollback","id":{}}}"#, serde_json::to_string(id)?)),
         ["refresh"] => client(r#"{"cmd":"store_refresh"}"#),
         ["get", id] => client(&format!(r#"{{"cmd":"store_install","id":{}}}"#, serde_json::to_string(id)?)),
+        // the saved WiFi networks as wpa_supplicant.conf blocks, for the boot-time merge
+        ["wifi-conf"] => {
+            print!("{}", wifi::conf_blocks(&install::Paths::from_env().store));
+            Ok(())
+        }
         _ => usage(),
     }
 }
