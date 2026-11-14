@@ -7,6 +7,12 @@ updates:
     groups:
       cargo-minor-patch:
         update-types: [minor, patch]
+    ignore:
+      # must match versions used by gbm / egui_glow
+      - dependency-name: drm
+        update-types: [version-update:semver-major, version-update:semver-minor]
+      - dependency-name: glow
+        update-types: [version-update:semver-major, version-update:semver-minor]
   - package-ecosystem: github-actions
     directory: /
     schedule:
