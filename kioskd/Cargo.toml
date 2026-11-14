@@ -24,4 +24,4 @@ url = "2"
 aws-lc-rs = "1"
 jiff = "0.2"
 tar = { version = "0.4", default-features = false }
-zstd = "0.13"
+zstd = "0.14"
