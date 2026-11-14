@@ -30,7 +30,7 @@ jobs:
       matrix:
         board: [rpi3, rpi4, rpi5]
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: Free disk space (a Buildroot build needs about 20 GB)
         run: |
@@ -48,7 +48,7 @@ jobs:
       # ~/.buildroot-ccache. Capped so the three boards fit the 10 GB repository
       # cache. The key is new on every run, so each run saves what it added.
       - name: Cache compiler output
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.buildroot-ccache
           key: br-ccache-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-${{ github.run_id }}
@@ -57,7 +57,7 @@ jobs:
 
       # source tarballs and Rust crates; the build itself is not cached
       - name: Cache downloads
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/br-dl
           key: br-dl-${{ env.BUILDROOT_VERSION }}-${{ matrix.board }}-${{ hashFiles('configs/pikiosk_*_defconfig', 'Cargo.lock') }}
@@ -95,7 +95,7 @@ jobs:
           fi
           { echo "files<<EOF"; printf '%b\n' "$files"; echo EOF; } >> "$GITHUB_OUTPUT"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: sdcard-image-${{ matrix.board }}
           path: ${{ steps.pack.outputs.files }}
